@@ -195,6 +195,49 @@ const getTimeColor = (time, caps) => {
 };
 
 /**
+ * Get color for days ago based on commit recency
+ * @param {number} daysAgo - Number of days since last commit
+ * @param {Object} caps - Terminal capabilities
+ * @returns {string} Color code
+ */
+const getDaysAgoColor = (daysAgo, caps) => {
+  if (!caps.colors) return '';
+  
+  // Very recent (0-1 days): Bright green
+  if (daysAgo <= 1) {
+    if (caps.truecolor) return ANSI.rgb(50, 255, 50); // Bright green
+    if (caps.colors256) return ANSI.color256(46); // Bright green
+    return ANSI.green;
+  }
+  
+  // Recent (2-7 days): Light green
+  if (daysAgo <= 7) {
+    if (caps.truecolor) return ANSI.rgb(144, 238, 144); // Light green
+    if (caps.colors256) return ANSI.color256(120); // Light green
+    return ANSI.green;
+  }
+  
+  // Moderate (8-14 days): Yellow/Gold
+  if (daysAgo <= 14) {
+    if (caps.truecolor) return ANSI.rgb(255, 215, 0); // Gold
+    if (caps.colors256) return ANSI.color256(220); // Gold
+    return ANSI.yellow;
+  }
+  
+  // Old (15-30 days): Orange
+  if (daysAgo <= 30) {
+    if (caps.truecolor) return ANSI.rgb(255, 165, 0); // Orange
+    if (caps.colors256) return ANSI.color256(214); // Orange
+    return ANSI.yellow;
+  }
+  
+  // Very old (>30 days): Red/Magenta
+  if (caps.truecolor) return ANSI.rgb(255, 100, 100); // Light red
+  if (caps.colors256) return ANSI.color256(203); // Light red
+  return ANSI.magenta;
+};
+
+/**
  * Colorize text
  * @param {string} text - Text to colorize
  * @param {string} colorCode - ANSI color code
@@ -693,7 +736,10 @@ const main = async (options) => {
         
         if (format === 'text') {
           console.log(`  📁 ${repo}`);
-          console.log(`     └─ Last commit: ${daysAgo} day${daysAgo !== 1 ? 's' : ''} ago (${lastCommit.toLocaleDateString()})`);
+          const daysAgoText = `${daysAgo} day${daysAgo !== 1 ? 's' : ''} ago`;
+          const daysAgoColored = colorize(daysAgoText, getDaysAgoColor(daysAgo, terminalCaps), terminalCaps);
+          const dateText = colorize(lastCommit.toLocaleDateString(), getMessageColor(terminalCaps), terminalCaps);
+          console.log(`     └─ Last commit: ${daysAgoColored} (${dateText})`);
         }
 
         // Standup mode: display author's commits
