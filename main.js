@@ -367,6 +367,7 @@ const getUserCommits = async (repoPath, author, sinceDate, untilDate) => {
       `--author=${author}`,
       `--since=${sinceDate}`,
       `--until=${untilDate}`,
+      `--abbrev=7`,
       `--format=${format}`
     ]);
 
