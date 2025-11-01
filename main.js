@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { readdir, stat, readFile } from 'node:fs/promises';
-import { join, relative, sep } from 'node:path';
+import { join, relative } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { Command } from 'commander';
@@ -494,17 +494,31 @@ const formatAsMarkdown = (data) => {
   markdown += `- **Period**: Last ${days} day${days !== 1 ? 's' : ''}\n`;
   markdown += `- **Mode**: ${mode}\n`;
   if (author) markdown += `- **Author**: ${author}\n`;
-  markdown += `- **Repositories found**: ${repos.length}\n`;
+  
+  // Count repos based on mode
+  let repoCount = 0;
+  if (mode === 'default' && data.commitsByDate) {
+    const uniqueRepos = new Set();
+    Object.values(data.commitsByDate).forEach(dateData => {
+      Object.keys(dateData).forEach(repo => uniqueRepos.add(repo));
+    });
+    repoCount = uniqueRepos.size;
+  } else if (repos) {
+    repoCount = repos.length;
+  }
+
+  markdown += `- **Repositories found**: ${repoCount}\n`;
   markdown += `- **Execution time**: ${duration}s\n\n`;
 
-  if (repos.length === 0) {
+  if (repoCount === 0) {
     markdown += `No active repositories found.\n`;
     return markdown;
   }
 
   markdown += `---\n\n`;
 
-  if (mode === 'chrono' && data.commitsByDate) {
+  // Default mode (chronological): group by date, then by project
+  if (mode === 'default' && data.commitsByDate) {
     const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const dates = Object.keys(data.commitsByDate).sort();
 
@@ -524,32 +538,39 @@ const formatAsMarkdown = (data) => {
         markdown += `\n`;
       }
     }
-  } else {
+  }
+  // Project mode or short mode: group by project
+  else {
     for (const repo of repos) {
       markdown += `## ${repo.path}\n\n`;
-      markdown += `- **Last commit**: ${repo.daysAgo} day${repo.daysAgo !== 1 ? 's' : ''} ago (${repo.lastCommitDate})\n\n`;
+      markdown += `- **Last commit**: ${repo.daysAgo} day${repo.daysAgo !== 1 ? 's' : ''} ago (${repo.lastCommitDate})\n`;
 
-      if (repo.commits && repo.commits.length > 0) {
-        markdown += `### Your commits\n\n`;
-        const commitsByDate = {};
-        repo.commits.forEach(commit => {
-          if (!commitsByDate[commit.date]) commitsByDate[commit.date] = [];
-          commitsByDate[commit.date].push(commit);
-        });
+      // In short mode, only show last commit date
+      if (mode === 'short' || !repo.commits || repo.commits.length === 0) {
+        markdown += `\n`;
+        continue;
+      }
 
-        const dates = Object.keys(commitsByDate).sort();
-        const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+      // Project mode: show commits grouped by date
+      markdown += `\n### Your commits\n\n`;
+      const commitsByDate = {};
+      repo.commits.forEach(commit => {
+        if (!commitsByDate[commit.date]) commitsByDate[commit.date] = [];
+        commitsByDate[commit.date].push(commit);
+      });
 
-        for (const date of dates) {
-          const dateObj = new Date(date);
-          const dayName = dayNames[dateObj.getDay()];
-          markdown += `#### ${date} (${dayName})\n\n`;
-          // Display commits in chronological order (oldest first)
-          for (const commit of commitsByDate[date].slice().reverse()) {
-            markdown += `- **${commit.time}** \`${commit.hash}\` - ${commit.message}\n`;
-          }
-          markdown += `\n`;
+      const dates = Object.keys(commitsByDate).sort();
+      const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+      for (const date of dates) {
+        const dateObj = new Date(date);
+        const dayName = dayNames[dateObj.getDay()];
+        markdown += `#### ${date} (${dayName})\n\n`;
+        // Display commits in chronological order (oldest first)
+        for (const commit of commitsByDate[date].slice().reverse()) {
+          markdown += `- **${commit.time}** \`${commit.hash}\` - ${commit.message}\n`;
         }
+        markdown += `\n`;
       }
     }
   }
@@ -564,14 +585,14 @@ const formatAsMarkdown = (data) => {
  * @param {number} options.days - Number of days to look back
  * @param {string} [options.since] - Start date (YYYY-MM-DD)
  * @param {string} [options.until] - End date (YYYY-MM-DD)
- * @param {boolean} options.standup - Enable standup mode
- * @param {boolean} options.chrono - Enable chronological mode
+ * @param {boolean} options.project - Enable project mode (group by project first)
+ * @param {boolean} options.short - Short mode (only show last commit date)
  * @param {string} [options.author] - Filter commits by author
  * @param {string} [options.format] - Output format (text, json, markdown)
  * @param {boolean} [options.color] - Color option (true to force, false to disable, undefined for auto)
  */
 const main = async (options) => {
-  const { path: startPath, days, since, until, standup: standupMode, chrono: chronoMode, author: customAuthor, format = 'text', color } = options;
+  const { path: startPath, days, since, until, project: projectMode, short: shortMode, author: customAuthor, format = 'text', color } = options;
 
   // Calculate date range
   let dateRange;
@@ -615,7 +636,7 @@ const main = async (options) => {
   const duration = ((Date.now() - startTime) / 1000).toFixed(2);
 
   // Prepare data structure for output
-  const mode = chronoMode ? 'chrono' : (standupMode ? 'standup' : 'standard');
+  const mode = projectMode ? 'project' : (shortMode ? 'short' : 'default');
   const outputData = {
     repos: [],
     mode,
@@ -639,12 +660,14 @@ const main = async (options) => {
       console.log(`✅ ${repos.length} active Git repositor${repos.length > 1 ? 'ies' : 'y'} found:\n`);
     }
 
-    // Determine the author to use for standup or chrono mode
+    // Determine the author to use (needed for all modes except short-only)
     let author = null;
-    if (standupMode || chronoMode) {
+    if (!shortMode || projectMode) {
       if (customAuthor) {
         author = customAuthor;
-        console.log(`👤 Filtering commits for author: ${author}\n`);
+        if (format === 'text') {
+          console.log(`👤 Filtering commits for author: ${author}\n`);
+        }
       } else {
         author = await getCurrentUserEmail();
         if (!author) {
@@ -655,8 +678,8 @@ const main = async (options) => {
       }
     }
 
-    // Chrono mode: chronological display by day
-    if (chronoMode && author) {
+    // Default mode (chrono): chronological display by day, then by project
+    if (!projectMode && !shortMode && author) {
       const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
       const commitsByDateAndRepo = {};
 
@@ -690,6 +713,12 @@ const main = async (options) => {
       } else {
         outputData.author = author;
         outputData.commitsByDate = commitsByDateAndRepo;
+        outputData.repos = Object.keys(commitsByDateAndRepo.flatMap ? commitsByDateAndRepo : {}).reduce((unique, date) => {
+          Object.keys(commitsByDateAndRepo[date]).forEach(repo => {
+            if (!unique.includes(repo)) unique.push(repo);
+          });
+          return unique;
+        }, []);
 
         if (format === 'text') {
           for (const date of dates) {
@@ -719,15 +748,15 @@ const main = async (options) => {
         }
       }
     }
-    // Standup mode or standard mode
+    // Project mode or short mode
     else {
       // Fetch all last commit dates in parallel
       const lastCommitDatesPromises = repos.map(repo => getLastCommitDate(repo));
       const lastCommitDates = await Promise.all(lastCommitDatesPromises);
 
-      // Fetch all user commits in parallel if in standup mode
+      // Fetch all user commits in parallel if in project mode (and not short-only)
       let allUserCommits = [];
-      if (standupMode && author) {
+      if (projectMode && !shortMode && author) {
         const userCommitsPromises = repos.map(repo => getUserCommits(repo, author, dateRange.sinceStr, dateRange.untilStr));
         allUserCommits = await Promise.all(userCommitsPromises);
       }
@@ -746,8 +775,8 @@ const main = async (options) => {
           console.log(`     └─ Last commit: ${daysAgoColored} (${dateText})`);
         }
 
-        // Standup mode: display author's commits
-        if (standupMode && author) {
+        // Project mode: display author's commits grouped by date (only if not short mode)
+        if (projectMode && !shortMode && author) {
           const userCommits = allUserCommits[i];
           if (userCommits.length > 0 && format === 'text') {
             console.log(`\n     Your commits:`);
@@ -792,24 +821,16 @@ const main = async (options) => {
           path: repo,
           lastCommitDate: formatDate(lastCommitDates[i]),
           daysAgo: Math.floor((Date.now() - lastCommitDates[i].getTime()) / (24 * 60 * 60 * 1000)),
-          commits: standupMode && author ? allUserCommits[i] : []
+          commits: projectMode && !shortMode && author ? allUserCommits[i] : []
         }));
-      }
-    }
 
-    // Output based on format
-    if (format === 'json') {
-      if (chronoMode && author) {
-        outputData.author = author;
-        outputData.commitsByDate = commitsByDateAndRepo;
+        // Output for non-text formats
+        if (format === 'json') {
+          console.log(formatAsJSON(outputData));
+        } else if (format === 'markdown') {
+          console.log(formatAsMarkdown(outputData));
+        }
       }
-      console.log(formatAsJSON(outputData));
-    } else if (format === 'markdown') {
-      if (chronoMode && author) {
-        outputData.author = author;
-        outputData.commitsByDate = commitsByDateAndRepo;
-      }
-      console.log(formatAsMarkdown(outputData));
     }
   }
 
@@ -827,8 +848,8 @@ program
   .version('0.1.0')
   .argument('[path]', 'Starting path for repository search', '.')
   .argument('[days]', 'Number of days to look back', '7')
-  .option('-s, --standup', 'Enable standup mode (group commits by repository)')
-  .option('-c, --chrono', 'Enable chronological mode (group commits by date)')
+  .option('-p, --project', 'Enable project mode (group by project first, then by date)')
+  .option('-s, --short', 'Short mode (only show last commit date without details)')
   .option('-a, --author <email>', 'Filter commits by author (email or partial name)')
   .option('-f, --format <type>', 'Output format: text, json, or markdown', 'text')
   .option('--since <date>', 'Start date for activity search (YYYY-MM-DD)')
@@ -842,8 +863,8 @@ program
         days: parseInt(daysArg, 10),
         since: options.since,
         until: options.until,
-        standup: options.standup,
-        chrono: options.chrono,
+        project: options.project,
+        short: options.short,
         author: options.author,
         format: options.format,
         color: options.color

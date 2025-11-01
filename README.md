@@ -27,8 +27,8 @@ git-did [options] [path] [days]
 
 ### Options
 
-- `-s, --standup` - Enable standup mode (group commits by repository)
-- `-c, --chrono` - Enable chronological mode (group commits by date)
+- `-p, --project` - Enable project mode (group by project first, then by date)
+- `-s, --short` - Short mode (only show last commit date without details)
 - `-a, --author <email>` - Filter commits by author (email or partial name)
 - `-f, --format <type>` - Output format: text (default), json, or markdown
 - `--since <date>` - Start date for activity search (YYYY-MM-DD format)
@@ -72,28 +72,42 @@ git-did --standup --since 2025-11-01 ~/projects
 
 ## Display Modes
 
-### Standard Mode (default)
+### Default Mode (chronological)
 
-Lists all active Git repositories with their last commit date.
+Groups commits by date, then by repository. Ideal for reviewing what was done each day.
 
 ```bash
 git-did ~/projects 7
 ```
 
-### Standup Mode
+### Project Mode (`--project` or `-p`)
 
-Groups commits by repository, then by date. Perfect for preparing daily standups.
+Groups commits by repository first, then by date. Perfect for preparing daily standups.
 
 ```bash
-git-did --standup ~/projects 3
+git-did --project ~/projects 3
+# or short alias
+git-did -p ~/projects 3
 ```
 
-### Chronological Mode
+### Short Mode (`--short` or `-s`)
 
-Groups commits by date, then by repository. Ideal for reviewing what was done each day.
+Lists repositories with only the last commit date, without detailed commit lists.
 
 ```bash
-git-did --chrono ~/projects 7
+git-did --short ~/projects 7
+# or short alias
+git-did -s ~/projects 7
+```
+
+### Combined Modes
+
+Combine `--project` and `--short` for a quick overview grouped by project:
+
+```bash
+git-did --project --short ~/projects 7
+# or with aliases
+git-did -ps ~/projects 7
 ```
 
 ## Export Formats
@@ -191,29 +205,35 @@ dist/
 ## Examples
 
 ```bash
-# Find all active repos in current directory (last 7 days)
+# Find all active repos in current directory (last 7 days) - chronological view
 git-did
 
 # Find active repos in specific directory (last 14 days)
 git-did ~/projects 14
 
-# Standup mode for last 3 days
-git-did --standup ~/projects 3
+# Project mode for last 3 days (grouped by project)
+git-did --project ~/projects 3
 
-# Chronological view with specific author
-git-did --chrono --author john@example.com ~/projects 7
+# Short mode - quick overview
+git-did --short ~/projects 7
+
+# Chronological view with specific author (default mode)
+git-did --author john@example.com ~/projects 7
 
 # Export to JSON for processing
 git-did ~/projects 14 --format json | jq '.repos | length'
 
-# Generate Markdown report
-git-did --standup ~/projects 3 --format markdown > weekly-standup.md
+# Generate Markdown report in project mode
+git-did --project ~/projects 3 --format markdown > weekly-standup.md
 
 # Activity for a specific date range
 git-did --since 2025-10-01 --until 2025-10-31 ~/projects
 
-# Combine date range with standup mode
-git-did --standup --since 2025-10-25 ~/projects
+# Combine date range with project mode
+git-did --project --since 2025-10-25 ~/projects
+
+# Quick project overview (project + short modes)
+git-did -ps ~/projects 14
 ```
 
 ## Features
