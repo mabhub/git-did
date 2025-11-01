@@ -31,10 +31,43 @@ standup [options] [path] [days]
 - `-c, --chrono` - Enable chronological mode (group commits by date)
 - `-a, --author <email>` - Filter commits by author (email or partial name)
 - `-f, --format <type>` - Output format: text (default), json, or markdown
+- `--since <date>` - Start date for activity search (YYYY-MM-DD format)
+- `--until <date>` - End date for activity search (YYYY-MM-DD format, default: today)
 - `--color` - Force color output (even for non-TTY)
 - `--no-color` - Disable color output
 - `-h, --help` - Display help information
 - `-V, --version` - Display version number
+
+## Date Range Selection
+
+By default, the tool searches for activity in the last N days (default: 7). You can also specify exact date ranges:
+
+### Using days parameter (default)
+
+```bash
+standup ~/projects 7        # Last 7 days
+standup ~/projects 14       # Last 14 days
+```
+
+### Using --since and --until options
+
+```bash
+# Activity since a specific date (until today)
+standup --since 2025-10-25 ~/projects
+
+# Activity in a specific date range
+standup --since 2025-10-01 --until 2025-10-31 ~/projects
+
+# Combine with other options
+standup --standup --since 2025-11-01 ~/projects
+```
+
+**Date format**: Dates must be in `YYYY-MM-DD` format (ISO 8601).
+
+**Validation**:
+- Invalid date formats will show an error message
+- `--since` date must be before `--until` date
+- `--until` defaults to today if not specified
 
 ## Display Modes
 
@@ -171,6 +204,12 @@ standup ~/projects 14 --format json | jq '.repos | length'
 
 # Generate Markdown report
 standup --standup ~/projects 3 --format markdown > weekly-standup.md
+
+# Activity for a specific date range
+standup --since 2025-10-01 --until 2025-10-31 ~/projects
+
+# Combine date range with standup mode
+standup --standup --since 2025-10-25 ~/projects
 ```
 
 ## Features
@@ -187,6 +226,7 @@ standup --standup ~/projects 3 --format markdown > weekly-standup.md
 - Parallel Git operations for improved performance
 - Smart color detection with 24-bit true color support
 - Time-of-day color coding for commit timestamps
+- Flexible date range selection (days or exact dates)
 
 ## Technical Details
 

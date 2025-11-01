@@ -9,6 +9,83 @@ import { Command } from 'commander';
 const execFileAsync = promisify(execFile);
 
 /**
+ * Parse and validate a date string in YYYY-MM-DD format
+ * @param {string} dateString - Date string to parse
+ * @returns {Date|null} Parsed date or null if invalid
+ */
+const parseDate = (dateString) => {
+  const regex = /^\d{4}-\d{2}-\d{2}$/;
+  if (!regex.test(dateString)) {
+    return null;
+  }
+
+  const date = new Date(dateString);
+  if (isNaN(date.getTime())) {
+    return null;
+  }
+
+  return date;
+};
+
+/**
+ * Format a date to YYYY-MM-DD
+ * @param {Date} date - Date to format
+ * @returns {string} Formatted date string
+ */
+const formatDate = (date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+/**
+ * Calculate date range from days parameter or since/until options
+ * @param {number} days - Number of days (legacy parameter)
+ * @param {string} [since] - Start date (YYYY-MM-DD)
+ * @param {string} [until] - End date (YYYY-MM-DD)
+ * @returns {Object} Date range with since and until dates
+ */
+const calculateDateRange = (days, since, until) => {
+  let sinceDate, untilDate;
+
+  // If since is provided, use it
+  if (since) {
+    sinceDate = parseDate(since);
+    if (!sinceDate) {
+      throw new Error(`Invalid --since date format. Use YYYY-MM-DD (e.g., ${formatDate(new Date())})`);
+    }
+  }
+
+  // If until is provided, use it; otherwise use today
+  if (until) {
+    untilDate = parseDate(until);
+    if (!untilDate) {
+      throw new Error(`Invalid --until date format. Use YYYY-MM-DD (e.g., ${formatDate(new Date())})`);
+    }
+  } else {
+    untilDate = new Date();
+  }
+
+  // If since is not provided, calculate it from days
+  if (!sinceDate) {
+    sinceDate = new Date(untilDate.getTime() - days * 24 * 60 * 60 * 1000);
+  }
+
+  // Validate that since is before until
+  if (sinceDate > untilDate) {
+    throw new Error('--since date must be before --until date');
+  }
+
+  return {
+    since: sinceDate,
+    until: untilDate,
+    sinceStr: formatDate(sinceDate),
+    untilStr: formatDate(untilDate)
+  };
+};
+
+/**
  * Detect terminal color capabilities
  * @returns {Object} Terminal capabilities
  */
@@ -233,19 +310,20 @@ const getCurrentUserEmail = async () => {
  * Get user commits in the repository for a given period
  * @param {string} repoPath - Repository path
  * @param {string} author - Author pattern (email or partial name)
- * @param {number} days - Number of days
+ * @param {string} sinceDate - Start date (YYYY-MM-DD)
+ * @param {string} untilDate - End date (YYYY-MM-DD)
  * @returns {Promise<Array<{hash: string, message: string, date: string, time: string, timestamp: number}>>}
  */
-const getUserCommits = async (repoPath, author, days) => {
+const getUserCommits = async (repoPath, author, sinceDate, untilDate) => {
   try {
-    const since = `${days}.days.ago`;
     const format = '%h|%s|%as|%at|%aI'; // short hash|subject|date YYYY-MM-DD|timestamp|ISO
     const { stdout } = await execFileAsync('git', [
       '-C',
       repoPath,
       'log',
       `--author=${author}`,
-      `--since=${since}`,
+      `--since=${sinceDate}`,
+      `--until=${untilDate}`,
       `--format=${format}`
     ]);
 
@@ -265,31 +343,30 @@ const getUserCommits = async (repoPath, author, days) => {
 };
 
 /**
- * Check if the repository has had activity in the last X days
+ * Check if the repository has had activity in a date range
  * @param {string} repoPath - Repository path
- * @param {number} days - Number of days
+ * @param {Date} sinceDate - Start date
+ * @param {Date} untilDate - End date
  * @returns {Promise<boolean>}
  */
-const hasRecentActivity = async (repoPath, days) => {
+const hasRecentActivity = async (repoPath, sinceDate, untilDate) => {
   const lastCommitDate = await getLastCommitDate(repoPath);
   if (!lastCommitDate) return false;
 
-  const now = new Date();
-  const daysAgo = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
-
-  return lastCommitDate >= daysAgo;
+  return lastCommitDate >= sinceDate && lastCommitDate <= untilDate;
 };
 
 /**
  * Recursively traverse the directory tree and find active Git repositories
  * @param {string} dirPath - Directory path to traverse
- * @param {number} days - Number of days of activity
+ * @param {Date} sinceDate - Start date for activity check
+ * @param {Date} untilDate - End date for activity check
  * @param {Set<string>} visited - Set of already visited paths (to avoid loops)
  * @param {string} rootPath - Root path for relative path calculation
  * @param {RegExp[]} ignoreRegexes - Array of ignore pattern regexes
  * @returns {Promise<string[]>}
  */
-const findActiveGitRepos = async (dirPath, days, visited = new Set(), rootPath = null, ignoreRegexes = []) => {
+const findActiveGitRepos = async (dirPath, sinceDate, untilDate, visited = new Set(), rootPath = null, ignoreRegexes = []) => {
   const activeRepos = [];
   
   // Set root path on first call
@@ -316,7 +393,7 @@ const findActiveGitRepos = async (dirPath, days, visited = new Set(), rootPath =
   try {
     // Check if it's a Git repository
     if (await isGitRepository(dirPath)) {
-      const hasActivity = await hasRecentActivity(dirPath, days);
+      const hasActivity = await hasRecentActivity(dirPath, sinceDate, untilDate);
       if (hasActivity) {
         activeRepos.push(dirPath);
       }
@@ -332,7 +409,7 @@ const findActiveGitRepos = async (dirPath, days, visited = new Set(), rootPath =
       .filter(entry => entry.isDirectory() && !entry.name.startsWith('.'))
       .map(entry => {
         const fullPath = join(dirPath, entry.name);
-        return findActiveGitRepos(fullPath, days, visited, rootPath, ignoreRegexes)
+        return findActiveGitRepos(fullPath, sinceDate, untilDate, visited, rootPath, ignoreRegexes)
           .catch(error => {
             // Ignore permission errors, etc.
             if (error.code !== 'EACCES' && error.code !== 'EPERM') {
@@ -439,6 +516,8 @@ const formatAsMarkdown = (data) => {
  * @param {Object} options - Command options
  * @param {string} options.path - Starting path for repository search
  * @param {number} options.days - Number of days to look back
+ * @param {string} [options.since] - Start date (YYYY-MM-DD)
+ * @param {string} [options.until] - End date (YYYY-MM-DD)
  * @param {boolean} options.standup - Enable standup mode
  * @param {boolean} options.chrono - Enable chronological mode
  * @param {string} [options.author] - Filter commits by author
@@ -446,7 +525,16 @@ const formatAsMarkdown = (data) => {
  * @param {boolean} [options.color] - Color option (true to force, false to disable, undefined for auto)
  */
 const main = async (options) => {
-  const { path: startPath, days, standup: standupMode, chrono: chronoMode, author: customAuthor, format = 'text', color } = options;
+  const { path: startPath, days, since, until, standup: standupMode, chrono: chronoMode, author: customAuthor, format = 'text', color } = options;
+
+  // Calculate date range
+  let dateRange;
+  try {
+    dateRange = calculateDateRange(days, since, until);
+  } catch (error) {
+    console.error(`Error: ${error.message}`);
+    process.exit(1);
+  }
 
   // Detect terminal capabilities and handle color options
   let terminalCaps = detectTerminalCapabilities();
@@ -468,12 +556,16 @@ const main = async (options) => {
     if (ignorePatterns.length > 0) {
       console.log(`🚫 Loaded ${ignorePatterns.length} ignore pattern(s) from .standupignore\n`);
     }
-    console.log(`� Searching for active Git repositories in: ${startPath}`);
-    console.log(`📅 Activity in the last ${days} day${days !== 1 ? 's' : ''}\n`);
+    console.log(`🔍 Searching for active Git repositories in: ${startPath}`);
+    if (since || until) {
+      console.log(`📅 Activity from ${dateRange.sinceStr} to ${dateRange.untilStr}\n`);
+    } else {
+      console.log(`📅 Activity in the last ${days} day${days !== 1 ? 's' : ''}\n`);
+    }
   }
 
   const startTime = Date.now();
-  const repos = await findActiveGitRepos(startPath, days, new Set(), null, ignoreRegexes);
+  const repos = await findActiveGitRepos(startPath, dateRange.since, dateRange.until, new Set(), null, ignoreRegexes);
   const duration = ((Date.now() - startTime) / 1000).toFixed(2);
 
   // Prepare data structure for output
@@ -482,6 +574,8 @@ const main = async (options) => {
     repos: [],
     mode,
     days,
+    since: dateRange.sinceStr,
+    until: dateRange.untilStr,
     duration,
     startPath
   };
@@ -521,7 +615,7 @@ const main = async (options) => {
       const commitsByDateAndRepo = {};
 
       // Collect all commits from all repositories in parallel
-      const commitsPromises = repos.map(repo => getUserCommits(repo, author, days));
+      const commitsPromises = repos.map(repo => getUserCommits(repo, author, dateRange.sinceStr, dateRange.untilStr));
       const allCommits = await Promise.all(commitsPromises);
 
       // Organize commits by date and repo
@@ -587,7 +681,7 @@ const main = async (options) => {
       // Fetch all user commits in parallel if in standup mode
       let allUserCommits = [];
       if (standupMode && author) {
-        const userCommitsPromises = repos.map(repo => getUserCommits(repo, author, days));
+        const userCommitsPromises = repos.map(repo => getUserCommits(repo, author, dateRange.sinceStr, dateRange.untilStr));
         allUserCommits = await Promise.all(userCommitsPromises);
       }
 
@@ -686,6 +780,8 @@ program
   .option('-c, --chrono', 'Enable chronological mode (group commits by date)')
   .option('-a, --author <email>', 'Filter commits by author (email or partial name)')
   .option('-f, --format <type>', 'Output format: text, json, or markdown', 'text')
+  .option('--since <date>', 'Start date for activity search (YYYY-MM-DD)')
+  .option('--until <date>', 'End date for activity search (YYYY-MM-DD, default: today)')
   .option('--color', 'Force color output (even for non-TTY)')
   .option('--no-color', 'Disable color output')
   .action(async (pathArg, daysArg, options) => {
@@ -693,6 +789,8 @@ program
       await main({
         path: pathArg,
         days: parseInt(daysArg, 10),
+        since: options.since,
+        until: options.until,
         standup: options.standup,
         chrono: options.chrono,
         author: options.author,
