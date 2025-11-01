@@ -738,7 +738,7 @@ const main = async (options) => {
           console.log(`  📁 ${repo}`);
           const daysAgoText = `${daysAgo} day${daysAgo !== 1 ? 's' : ''} ago`;
           const daysAgoColored = colorize(daysAgoText, getDaysAgoColor(daysAgo, terminalCaps), terminalCaps);
-          const dateText = colorize(lastCommit.toLocaleDateString(), getMessageColor(terminalCaps), terminalCaps);
+          const dateText = colorize(formatDate(lastCommit), getMessageColor(terminalCaps), terminalCaps);
           console.log(`     └─ Last commit: ${daysAgoColored} (${dateText})`);
         }
 
@@ -785,7 +785,7 @@ const main = async (options) => {
       if (format !== 'text') {
         outputData.repos = repos.map((repo, i) => ({
           path: repo,
-          lastCommitDate: lastCommitDates[i].toLocaleDateString(),
+          lastCommitDate: formatDate(lastCommitDates[i]),
           daysAgo: Math.floor((Date.now() - lastCommitDates[i].getTime()) / (24 * 60 * 60 * 1000)),
           commits: standupMode && author ? allUserCommits[i] : []
         }));
