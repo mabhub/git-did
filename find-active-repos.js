@@ -4,6 +4,7 @@ import { readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { Command } from 'commander';
 
 const execFileAsync = promisify(execFile);
 
@@ -161,33 +162,15 @@ const findActiveGitRepos = async (dirPath, days, visited = new Set()) => {
 
 /**
  * Main function
+ * @param {Object} options - Command options
+ * @param {string} options.path - Starting path for repository search
+ * @param {number} options.days - Number of days to look back
+ * @param {boolean} options.standup - Enable standup mode
+ * @param {boolean} options.chrono - Enable chronological mode
+ * @param {string} [options.author] - Filter commits by author
  */
-const main = async () => {
-  const args = process.argv.slice(2);
-
-  // Check for --standup option
-  const standupMode = args.includes('--standup');
-
-  // Check for --chrono option
-  const chronoMode = args.includes('--chrono');
-
-  // Extract --author option
-  const authorIndex = args.findIndex(arg => arg === '--author');
-  let customAuthor = null;
-  if (authorIndex !== -1 && authorIndex + 1 < args.length) {
-    customAuthor = args[authorIndex + 1];
-  }
-
-  // Filter arguments to keep only path and days
-  const filteredArgs = args.filter((arg, index) =>
-    arg !== '--standup' &&
-    arg !== '--chrono' &&
-    arg !== '--author' &&
-    !(authorIndex !== -1 && index === authorIndex + 1)
-  );
-
-  const startPath = filteredArgs[0] || '.';
-  const days = parseInt(filteredArgs[1], 10) || 7;
+const main = async (options) => {
+  const { path: startPath, days, standup: standupMode, chrono: chronoMode, author: customAuthor } = options;
 
   console.log(`🔍 Searching for active Git repositories in: ${startPath}`);
   console.log(`📅 Activity in the last ${days} day${days !== 1 ? 's' : ''}\n`);
@@ -307,4 +290,31 @@ const main = async () => {
   console.log(`\n⏱️  Execution time: ${duration}s`);
 };
 
-main().catch(console.error);
+// CLI setup with commander
+const program = new Command();
+
+program
+  .name('standup')
+  .description('Git activity tracker for standup meetings and project monitoring')
+  .version('0.1.0')
+  .argument('[path]', 'Starting path for repository search', '.')
+  .argument('[days]', 'Number of days to look back', '7')
+  .option('-s, --standup', 'Enable standup mode (group commits by repository)')
+  .option('-c, --chrono', 'Enable chronological mode (group commits by date)')
+  .option('-a, --author <email>', 'Filter commits by author (email or partial name)')
+  .action(async (pathArg, daysArg, options) => {
+    try {
+      await main({
+        path: pathArg,
+        days: parseInt(daysArg, 10),
+        standup: options.standup,
+        chrono: options.chrono,
+        author: options.author
+      });
+    } catch (error) {
+      console.error('Error:', error.message);
+      process.exit(1);
+    }
+  });
+
+program.parse();
