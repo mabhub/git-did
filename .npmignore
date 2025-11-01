@@ -1,0 +1,21 @@
+# Git
+.git
+.gitignore
+
+# NPM
+node_modules
+
+# Development files
+.didignore
+.vscode
+.idea
+
+# Tests
+test
+tests
+*.test.js
+*.spec.js
+
+# CI
+.github
+.gitlab-ci.yml

@@ -4,7 +4,7 @@
   "description": "Git activity tracker for standup meetings and project monitoring",
   "main": "main.js",
   "bin": {
-    "git-did": "./main.js"
+    "git-did": "main.js"
   },
   "scripts": {
     "start": "node main.js",
@@ -12,15 +12,34 @@
   },
   "keywords": [
     "git",
+    "cli",
     "standup",
     "activity",
     "tracker",
     "commit",
-    "repository"
+    "repository",
+    "history",
+    "tool"
   ],
-  "author": "",
+  "author": "mab <git@ma-b.com>",
   "license": "ISC",
   "type": "module",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "files": [
+    "main.js",
+    "README.md",
+    ".didignore.example"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mabhub/git-did.git"
+  },
+  "homepage": "https://github.com/mabhub/git-did#readme",
+  "bugs": {
+    "url": "https://github.com/mabhub/git-did/issues"
+  },
   "dependencies": {
     "commander": "^14.0.2"
   }
