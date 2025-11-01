@@ -2,12 +2,12 @@
   "name": "standup",
   "version": "0.1.0",
   "description": "Git activity tracker for standup meetings and project monitoring",
-  "main": "find-active-repos.js",
+  "main": "main.js",
   "bin": {
-    "standup": "./find-active-repos.js"
+    "standup": "./main.js"
   },
   "scripts": {
-    "start": "node find-active-repos.js",
+    "start": "node main.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
