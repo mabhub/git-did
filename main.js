@@ -91,20 +91,20 @@ const calculateDateRange = (days, since, until) => {
  */
 const detectTerminalCapabilities = () => {
   const { COLORTERM, TERM, NO_COLOR, FORCE_COLOR } = process.env;
-  
+
   // Check if color is explicitly disabled or forced
   if (NO_COLOR !== undefined) return { colors: false, truecolor: false };
   if (FORCE_COLOR !== undefined) return { colors: true, truecolor: COLORTERM === 'truecolor' };
-  
+
   // Check if stdout is a TTY (interactive terminal)
   const isTTY = process.stdout.isTTY;
-  
+
   // Check for truecolor support
   const truecolor = COLORTERM === 'truecolor' || COLORTERM === '24bit';
-  
+
   // Check for 256 color support
   const colors256 = TERM && (TERM.includes('256') || TERM.includes('xterm'));
-  
+
   return {
     colors: isTTY,
     truecolor,
@@ -164,30 +164,30 @@ const getMessageColor = (caps) => {
  */
 const getTimeColor = (time, caps) => {
   if (!caps.colors) return '';
-  
+
   const [hours] = time.split(':').map(Number);
-  
+
   // Morning (6-12): Yellow/Gold tones
   if (hours >= 6 && hours < 12) {
     if (caps.truecolor) return ANSI.rgb(255, 215, 0); // Gold
     if (caps.colors256) return ANSI.color256(220); // Gold
     return ANSI.yellow;
   }
-  
+
   // Afternoon (12-18): Green tones
   if (hours >= 12 && hours < 18) {
     if (caps.truecolor) return ANSI.rgb(144, 238, 144); // Light green
     if (caps.colors256) return ANSI.color256(120); // Light green
     return ANSI.green;
   }
-  
+
   // Evening (18-22): Orange/Magenta tones
   if (hours >= 18 && hours < 22) {
     if (caps.truecolor) return ANSI.rgb(255, 165, 100); // Light orange
     if (caps.colors256) return ANSI.color256(215); // Orange
     return ANSI.yellow;
   }
-  
+
   // Night (22-6): Blue/Purple tones
   if (caps.truecolor) return ANSI.rgb(147, 112, 219); // Medium purple
   if (caps.colors256) return ANSI.color256(141); // Purple
@@ -202,35 +202,35 @@ const getTimeColor = (time, caps) => {
  */
 const getDaysAgoColor = (daysAgo, caps) => {
   if (!caps.colors) return '';
-  
+
   // Very recent (0-1 days): Bright green
   if (daysAgo <= 1) {
     if (caps.truecolor) return ANSI.rgb(50, 255, 50); // Bright green
     if (caps.colors256) return ANSI.color256(46); // Bright green
     return ANSI.green;
   }
-  
+
   // Recent (2-7 days): Light green
   if (daysAgo <= 7) {
     if (caps.truecolor) return ANSI.rgb(144, 238, 144); // Light green
     if (caps.colors256) return ANSI.color256(120); // Light green
     return ANSI.green;
   }
-  
+
   // Moderate (8-14 days): Yellow/Gold
   if (daysAgo <= 14) {
     if (caps.truecolor) return ANSI.rgb(255, 215, 0); // Gold
     if (caps.colors256) return ANSI.color256(220); // Gold
     return ANSI.yellow;
   }
-  
+
   // Old (15-30 days): Orange
   if (daysAgo <= 30) {
     if (caps.truecolor) return ANSI.rgb(255, 165, 0); // Orange
     if (caps.colors256) return ANSI.color256(214); // Orange
     return ANSI.yellow;
   }
-  
+
   // Very old (>30 days): Red/Magenta
   if (caps.truecolor) return ANSI.rgb(255, 100, 100); // Light red
   if (caps.colors256) return ANSI.color256(203); // Light red
@@ -250,8 +250,8 @@ const colorize = (text, colorCode, caps) => {
 };
 
 /**
- * Parse .standupignore file and return array of patterns
- * @param {string} filePath - Path to .standupignore file
+ * Parse .didignore file and return array of patterns
+ * @param {string} filePath - Path to .didignore file
  * @returns {Promise<string[]>} Array of ignore patterns
  */
 const parseIgnoreFile = async (filePath) => {
@@ -412,7 +412,7 @@ const hasRecentActivity = async (repoPath, sinceDate, untilDate) => {
  */
 const findActiveGitRepos = async (dirPath, sinceDate, untilDate, visited = new Set(), rootPath = null, ignoreRegexes = []) => {
   const activeRepos = [];
-  
+
   // Set root path on first call
   if (rootPath === null) {
     rootPath = dirPath;
@@ -592,15 +592,15 @@ const main = async (options) => {
     terminalCaps = { colors: false, truecolor: false, colors256: false, basic: false };
   }
 
-  // Load .standupignore file from the search root
-  const ignoreFilePath = join(startPath, '.standupignore');
+  // Load .didignore file from the search root
+  const ignoreFilePath = join(startPath, '.didignore');
   const ignorePatterns = await parseIgnoreFile(ignoreFilePath);
   const ignoreRegexes = ignorePatterns.map(patternToRegex);
 
   // Only show progress messages in text format
   if (format === 'text') {
     if (ignorePatterns.length > 0) {
-      console.log(`🚫 Loaded ${ignorePatterns.length} ignore pattern(s) from .standupignore\n`);
+      console.log(`🚫 Loaded ${ignorePatterns.length} ignore pattern(s) from .didignore\n`);
     }
     console.log(`🔍 Searching for active Git repositories in: ${startPath}`);
     if (since || until) {
@@ -737,7 +737,7 @@ const main = async (options) => {
         const repo = repos[i];
         const lastCommit = lastCommitDates[i];
         const daysAgo = Math.floor((Date.now() - lastCommit.getTime()) / (24 * 60 * 60 * 1000));
-        
+
         if (format === 'text') {
           console.log(`  📁 ${repo}`);
           const daysAgoText = `${daysAgo} day${daysAgo !== 1 ? 's' : ''} ago`;
@@ -822,7 +822,7 @@ const main = async (options) => {
 const program = new Command();
 
 program
-  .name('standup')
+  .name('git-did')
   .description('Git activity tracker for standup meetings and project monitoring')
   .version('0.1.0')
   .argument('[path]', 'Starting path for repository search', '.')

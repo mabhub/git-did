@@ -1,10 +1,10 @@
 {
-  "name": "standup",
+  "name": "git-did",
   "version": "0.1.0",
   "description": "Git activity tracker for standup meetings and project monitoring",
   "main": "main.js",
   "bin": {
-    "standup": "./main.js"
+    "git-did": "./main.js"
   },
   "scripts": {
     "start": "node main.js",

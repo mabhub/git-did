@@ -1,4 +1,4 @@
-# Standup - Git Activity Tracker
+# git-did - Git Activity Tracker
 
 Git activity tracker for standup meetings and project monitoring.
 
@@ -17,7 +17,7 @@ npm link
 ## Usage
 
 ```bash
-standup [options] [path] [days]
+git-did [options] [path] [days]
 ```
 
 ### Arguments
@@ -45,26 +45,27 @@ By default, the tool searches for activity in the last N days (default: 7). You 
 ### Using days parameter (default)
 
 ```bash
-standup ~/projects 7        # Last 7 days
-standup ~/projects 14       # Last 14 days
+git-did ~/projects 7        # Last 7 days
+git-did ~/projects 14       # Last 14 days
 ```
 
 ### Using --since and --until options
 
 ```bash
 # Activity since a specific date (until today)
-standup --since 2025-10-25 ~/projects
+git-did --since 2025-10-25 ~/projects
 
 # Activity in a specific date range
-standup --since 2025-10-01 --until 2025-10-31 ~/projects
+git-did --since 2025-10-01 --until 2025-10-31 ~/projects
 
 # Combine with other options
-standup --standup --since 2025-11-01 ~/projects
+git-did --standup --since 2025-11-01 ~/projects
 ```
 
 **Date format**: Dates must be in `YYYY-MM-DD` format (ISO 8601).
 
 **Validation**:
+
 - Invalid date formats will show an error message
 - `--since` date must be before `--until` date
 - `--until` defaults to today if not specified
@@ -76,7 +77,7 @@ standup --standup --since 2025-11-01 ~/projects
 Lists all active Git repositories with their last commit date.
 
 ```bash
-standup ~/projects 7
+git-did ~/projects 7
 ```
 
 ### Standup Mode
@@ -84,7 +85,7 @@ standup ~/projects 7
 Groups commits by repository, then by date. Perfect for preparing daily standups.
 
 ```bash
-standup --standup ~/projects 3
+git-did --standup ~/projects 3
 ```
 
 ### Chronological Mode
@@ -92,7 +93,7 @@ standup --standup ~/projects 3
 Groups commits by date, then by repository. Ideal for reviewing what was done each day.
 
 ```bash
-standup --chrono ~/projects 7
+git-did --chrono ~/projects 7
 ```
 
 ## Export Formats
@@ -102,7 +103,7 @@ standup --chrono ~/projects 7
 Export results as structured JSON for integration with other tools or automation.
 
 ```bash
-standup ~/projects 7 --format json > report.json
+git-did ~/projects 7 --format json > report.json
 ```
 
 ### Markdown Format
@@ -110,7 +111,7 @@ standup ~/projects 7 --format json > report.json
 Generate Markdown reports for documentation or sharing.
 
 ```bash
-standup --standup ~/projects 7 --format markdown > STANDUP.md
+git-did --standup ~/projects 7 --format markdown > STANDUP.md
 ```
 
 ### Text Format (default)
@@ -118,14 +119,15 @@ standup --standup ~/projects 7 --format markdown > STANDUP.md
 Human-readable console output with colors and emojis.
 
 ```bash
-standup ~/projects 7
+git-did ~/projects 7
 # or explicitly:
-standup ~/projects 7 --format text
+git-did ~/projects 7 --format text
 ```
 
 #### Color Support
 
 The text format automatically detects terminal capabilities and applies colors:
+
 - **Interactive terminals**: Colors enabled by default
 - **Non-TTY (piped/redirected)**: Colors disabled by default
 - **True color (24-bit)**: Full RGB color palette when supported
@@ -133,6 +135,7 @@ The text format automatically detects terminal capabilities and applies colors:
 - **Basic colors**: ANSI colors for standard terminals
 
 Color scheme:
+
 - **Commit hashes**: Cyan/Sky blue (visible on both dark and light backgrounds)
 - **Commit messages**: Medium gray (neutral, works on all backgrounds)
 - **Times**: Color-coded by time of day
@@ -142,19 +145,20 @@ Color scheme:
   - Night (22-6h): Purple/Magenta
 
 Force or disable colors:
+
 ```bash
 # Force colors even when piping
-standup ~/projects 7 --color | less -R
+git-did ~/projects 7 --color | less -R
 
 # Disable colors
-standup ~/projects 7 --no-color
+git-did ~/projects 7 --no-color
 ```
 
-## .standupignore File
+## .didignore File
 
-You can exclude specific directories from the search by creating a `.standupignore` file in the search root directory. The syntax is similar to `.gitignore`.
+You can exclude specific directories from the search by creating a `.didignore` file in the search root directory. The syntax is similar to `.gitignore`.
 
-### Example .standupignore
+### Example .didignore
 
 ```
 # Ignore node_modules in any directory
@@ -188,28 +192,28 @@ dist/
 
 ```bash
 # Find all active repos in current directory (last 7 days)
-standup
+git-did
 
 # Find active repos in specific directory (last 14 days)
-standup ~/projects 14
+git-did ~/projects 14
 
 # Standup mode for last 3 days
-standup --standup ~/projects 3
+git-did --standup ~/projects 3
 
 # Chronological view with specific author
-standup --chrono --author john@example.com ~/projects 7
+git-did --chrono --author john@example.com ~/projects 7
 
 # Export to JSON for processing
-standup ~/projects 14 --format json | jq '.repos | length'
+git-did ~/projects 14 --format json | jq '.repos | length'
 
 # Generate Markdown report
-standup --standup ~/projects 3 --format markdown > weekly-standup.md
+git-did --standup ~/projects 3 --format markdown > weekly-standup.md
 
 # Activity for a specific date range
-standup --since 2025-10-01 --until 2025-10-31 ~/projects
+git-did --since 2025-10-01 --until 2025-10-31 ~/projects
 
 # Combine date range with standup mode
-standup --standup --since 2025-10-25 ~/projects
+git-did --standup --since 2025-10-25 ~/projects
 ```
 
 ## Features
@@ -220,7 +224,7 @@ standup --standup --since 2025-10-25 ~/projects
 - Configurable time period
 - Symbolic link loop detection
 - Permission error handling
-- `.standupignore` file support for path exclusion
+- `.didignore` file support for path exclusion
 - Execution time tracking
 - Multiple output formats (text, JSON, Markdown)
 - Parallel Git operations for improved performance

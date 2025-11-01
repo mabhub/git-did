@@ -1,5 +1,5 @@
-# .standupignore example file
-# Use gitignore-like syntax to exclude paths from standup tracking
+# .didignore example file
+# Use gitignore-like syntax to exclude paths from git-did tracking
 
 # Ignore node_modules in any directory
 node_modules/
