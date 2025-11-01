@@ -845,7 +845,7 @@ const program = new Command();
 program
   .name('git-did')
   .description('Git activity tracker for standup meetings and project monitoring')
-  .version('0.1.0')
+  .version('0.2.0')
   .argument('[path]', 'Starting path for repository search', '.')
   .argument('[days]', 'Number of days to look back', '7')
   .option('-p, --project', 'Enable project mode (group by project first, then by date)')
