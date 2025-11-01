@@ -31,6 +31,8 @@ standup [options] [path] [days]
 - `-c, --chrono` - Enable chronological mode (group commits by date)
 - `-a, --author <email>` - Filter commits by author (email or partial name)
 - `-f, --format <type>` - Output format: text (default), json, or markdown
+- `--color` - Force color output (even for non-TTY)
+- `--no-color` - Disable color output
 - `-h, --help` - Display help information
 - `-V, --version` - Display version number
 
@@ -86,6 +88,33 @@ Human-readable console output with colors and emojis.
 standup ~/projects 7
 # or explicitly:
 standup ~/projects 7 --format text
+```
+
+#### Color Support
+
+The text format automatically detects terminal capabilities and applies colors:
+- **Interactive terminals**: Colors enabled by default
+- **Non-TTY (piped/redirected)**: Colors disabled by default
+- **True color (24-bit)**: Full RGB color palette when supported
+- **256 colors**: Extended color palette for xterm-256color terminals
+- **Basic colors**: ANSI colors for standard terminals
+
+Color scheme:
+- **Commit hashes**: Cyan/Sky blue (visible on both dark and light backgrounds)
+- **Commit messages**: Medium gray (neutral, works on all backgrounds)
+- **Times**: Color-coded by time of day
+  - Morning (6-12h): Gold/Yellow
+  - Afternoon (12-18h): Green
+  - Evening (18-22h): Orange
+  - Night (22-6h): Purple/Magenta
+
+Force or disable colors:
+```bash
+# Force colors even when piping
+standup ~/projects 7 --color | less -R
+
+# Disable colors
+standup ~/projects 7 --no-color
 ```
 
 ## .standupignore File
@@ -156,6 +185,8 @@ standup --standup ~/projects 3 --format markdown > weekly-standup.md
 - Execution time tracking
 - Multiple output formats (text, JSON, Markdown)
 - Parallel Git operations for improved performance
+- Smart color detection with 24-bit true color support
+- Time-of-day color coding for commit timestamps
 
 ## Technical Details
 

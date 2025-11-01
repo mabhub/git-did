@@ -9,6 +9,127 @@ import { Command } from 'commander';
 const execFileAsync = promisify(execFile);
 
 /**
+ * Detect terminal color capabilities
+ * @returns {Object} Terminal capabilities
+ */
+const detectTerminalCapabilities = () => {
+  const { COLORTERM, TERM, NO_COLOR, FORCE_COLOR } = process.env;
+  
+  // Check if color is explicitly disabled or forced
+  if (NO_COLOR !== undefined) return { colors: false, truecolor: false };
+  if (FORCE_COLOR !== undefined) return { colors: true, truecolor: COLORTERM === 'truecolor' };
+  
+  // Check if stdout is a TTY (interactive terminal)
+  const isTTY = process.stdout.isTTY;
+  
+  // Check for truecolor support
+  const truecolor = COLORTERM === 'truecolor' || COLORTERM === '24bit';
+  
+  // Check for 256 color support
+  const colors256 = TERM && (TERM.includes('256') || TERM.includes('xterm'));
+  
+  return {
+    colors: isTTY,
+    truecolor,
+    colors256,
+    basic: isTTY && !colors256 && !truecolor
+  };
+};
+
+/**
+ * ANSI color codes
+ */
+const ANSI = {
+  reset: '\x1b[0m',
+  // Basic colors (work on all terminals)
+  cyan: '\x1b[36m',
+  blue: '\x1b[34m',
+  green: '\x1b[32m',
+  yellow: '\x1b[33m',
+  magenta: '\x1b[35m',
+  gray: '\x1b[90m',
+  // 256 colors
+  color256: (code) => `\x1b[38;5;${code}m`,
+  // True color (RGB)
+  rgb: (r, g, b) => `\x1b[38;2;${r};${g};${b}m`
+};
+
+/**
+ * Get color for commit hash
+ * @param {Object} caps - Terminal capabilities
+ * @returns {string} Color code
+ */
+const getHashColor = (caps) => {
+  if (!caps.colors) return '';
+  if (caps.truecolor) return ANSI.rgb(135, 206, 250); // Light sky blue
+  if (caps.colors256) return ANSI.color256(117); // Sky blue
+  return ANSI.cyan;
+};
+
+/**
+ * Get color for commit message
+ * @param {Object} caps - Terminal capabilities
+ * @returns {string} Color code
+ */
+const getMessageColor = (caps) => {
+  if (!caps.colors) return '';
+  // Neutral color that works on both dark and light backgrounds
+  if (caps.truecolor) return ANSI.rgb(180, 180, 180); // Medium gray
+  if (caps.colors256) return ANSI.color256(250); // Light gray
+  return ANSI.gray;
+};
+
+/**
+ * Get color for time based on time of day
+ * @param {string} time - Time in HH:MM format
+ * @param {Object} caps - Terminal capabilities
+ * @returns {string} Color code
+ */
+const getTimeColor = (time, caps) => {
+  if (!caps.colors) return '';
+  
+  const [hours] = time.split(':').map(Number);
+  
+  // Morning (6-12): Yellow/Gold tones
+  if (hours >= 6 && hours < 12) {
+    if (caps.truecolor) return ANSI.rgb(255, 215, 0); // Gold
+    if (caps.colors256) return ANSI.color256(220); // Gold
+    return ANSI.yellow;
+  }
+  
+  // Afternoon (12-18): Green tones
+  if (hours >= 12 && hours < 18) {
+    if (caps.truecolor) return ANSI.rgb(144, 238, 144); // Light green
+    if (caps.colors256) return ANSI.color256(120); // Light green
+    return ANSI.green;
+  }
+  
+  // Evening (18-22): Orange/Magenta tones
+  if (hours >= 18 && hours < 22) {
+    if (caps.truecolor) return ANSI.rgb(255, 165, 100); // Light orange
+    if (caps.colors256) return ANSI.color256(215); // Orange
+    return ANSI.yellow;
+  }
+  
+  // Night (22-6): Blue/Purple tones
+  if (caps.truecolor) return ANSI.rgb(147, 112, 219); // Medium purple
+  if (caps.colors256) return ANSI.color256(141); // Purple
+  return ANSI.magenta;
+};
+
+/**
+ * Colorize text
+ * @param {string} text - Text to colorize
+ * @param {string} colorCode - ANSI color code
+ * @param {Object} caps - Terminal capabilities
+ * @returns {string} Colorized text
+ */
+const colorize = (text, colorCode, caps) => {
+  if (!caps.colors || !colorCode) return text;
+  return `${colorCode}${text}${ANSI.reset}`;
+};
+
+/**
  * Parse .standupignore file and return array of patterns
  * @param {string} filePath - Path to .standupignore file
  * @returns {Promise<string[]>} Array of ignore patterns
@@ -322,9 +443,20 @@ const formatAsMarkdown = (data) => {
  * @param {boolean} options.chrono - Enable chronological mode
  * @param {string} [options.author] - Filter commits by author
  * @param {string} [options.format] - Output format (text, json, markdown)
+ * @param {boolean} [options.color] - Color option (true to force, false to disable, undefined for auto)
  */
 const main = async (options) => {
-  const { path: startPath, days, standup: standupMode, chrono: chronoMode, author: customAuthor, format = 'text' } = options;
+  const { path: startPath, days, standup: standupMode, chrono: chronoMode, author: customAuthor, format = 'text', color } = options;
+
+  // Detect terminal capabilities and handle color options
+  let terminalCaps = detectTerminalCapabilities();
+  if (color === true) {
+    // Force color
+    terminalCaps = { ...terminalCaps, colors: true };
+  } else if (color === false) {
+    // Disable color
+    terminalCaps = { colors: false, truecolor: false, colors256: false, basic: false };
+  }
 
   // Load .standupignore file from the search root
   const ignoreFilePath = join(startPath, '.standupignore');
@@ -431,7 +563,10 @@ const main = async (options) => {
               console.log(`\n  📁 ${repo}`);
               const commits = commitsByDateAndRepo[date][repo];
               for (const commit of commits) {
-                console.log(`     ${commit.time} ${commit.hash} - ${commit.message}`);
+                const timeColored = colorize(commit.time, getTimeColor(commit.time, terminalCaps), terminalCaps);
+                const hashColored = colorize(commit.hash, getHashColor(terminalCaps), terminalCaps);
+                const messageColored = colorize(commit.message, getMessageColor(terminalCaps), terminalCaps);
+                console.log(`     ${timeColored} ${hashColored} - ${messageColored}`);
               }
             }
             console.log('\n');
@@ -494,7 +629,10 @@ const main = async (options) => {
 
                 console.log(`\n        📅 ${date} (${dayName})`);
                 for (const commit of commitsByDate[date]) {
-                  console.log(`           ${commit.time} ${commit.hash} - ${commit.message}`);
+                  const timeColored = colorize(commit.time, getTimeColor(commit.time, terminalCaps), terminalCaps);
+                  const hashColored = colorize(commit.hash, getHashColor(terminalCaps), terminalCaps);
+                  const messageColored = colorize(commit.message, getMessageColor(terminalCaps), terminalCaps);
+                  console.log(`           ${timeColored} ${hashColored} - ${messageColored}`);
                 }
               }
               console.log('');
@@ -548,6 +686,8 @@ program
   .option('-c, --chrono', 'Enable chronological mode (group commits by date)')
   .option('-a, --author <email>', 'Filter commits by author (email or partial name)')
   .option('-f, --format <type>', 'Output format: text, json, or markdown', 'text')
+  .option('--color', 'Force color output (even for non-TTY)')
+  .option('--no-color', 'Disable color output')
   .action(async (pathArg, daysArg, options) => {
     try {
       await main({
@@ -556,7 +696,8 @@ program
         standup: options.standup,
         chrono: options.chrono,
         author: options.author,
-        format: options.format
+        format: options.format,
+        color: options.color
       });
     } catch (error) {
       console.error('Error:', error.message);
