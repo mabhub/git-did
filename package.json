@@ -1,13 +1,27 @@
 {
   "name": "standup",
   "version": "0.1.0",
-  "description": "",
+  "description": "Git activity tracker for standup meetings and project monitoring",
   "main": "find-active-repos.js",
+  "bin": {
+    "standup": "./find-active-repos.js"
+  },
   "scripts": {
+    "start": "node find-active-repos.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": [],
+  "keywords": [
+    "git",
+    "standup",
+    "activity",
+    "tracker",
+    "commit",
+    "repository"
+  ],
   "author": "",
   "license": "ISC",
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "commander": "^14.0.2"
+  }
 }
