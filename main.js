@@ -505,7 +505,7 @@ const formatAsMarkdown = (data) => {
 
   if (mode === 'chrono' && data.commitsByDate) {
     const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    const dates = Object.keys(data.commitsByDate).sort().reverse();
+    const dates = Object.keys(data.commitsByDate).sort();
 
     for (const date of dates) {
       const dateObj = new Date(date);
@@ -516,7 +516,8 @@ const formatAsMarkdown = (data) => {
       for (const repo of reposForDate) {
         markdown += `### ${repo}\n\n`;
         const commits = data.commitsByDate[date][repo];
-        for (const commit of commits) {
+        // Display commits in chronological order (oldest first)
+        for (const commit of commits.slice().reverse()) {
           markdown += `- **${commit.time}** \`${commit.hash}\` - ${commit.message}\n`;
         }
         markdown += `\n`;
@@ -535,14 +536,15 @@ const formatAsMarkdown = (data) => {
           commitsByDate[commit.date].push(commit);
         });
 
-        const dates = Object.keys(commitsByDate).sort().reverse();
+        const dates = Object.keys(commitsByDate).sort();
         const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
         for (const date of dates) {
           const dateObj = new Date(date);
           const dayName = dayNames[dateObj.getDay()];
           markdown += `#### ${date} (${dayName})\n\n`;
-          for (const commit of commitsByDate[date]) {
+          // Display commits in chronological order (oldest first)
+          for (const commit of commitsByDate[date].slice().reverse()) {
             markdown += `- **${commit.time}** \`${commit.hash}\` - ${commit.message}\n`;
           }
           markdown += `\n`;
@@ -675,8 +677,8 @@ const main = async (options) => {
         }
       });
 
-      // Display in reverse chronological order (most recent first)
-      const dates = Object.keys(commitsByDateAndRepo).sort().reverse();
+      // Display in chronological order (oldest first)
+      const dates = Object.keys(commitsByDateAndRepo).sort();
 
       if (dates.length === 0) {
         if (format === 'text') {
@@ -699,7 +701,8 @@ const main = async (options) => {
             for (const repo of reposForDate) {
               console.log(`\n  📁 ${repo}`);
               const commits = commitsByDateAndRepo[date][repo];
-              for (const commit of commits) {
+              // Display commits in chronological order (oldest first)
+              for (const commit of commits.reverse()) {
                 const timeColored = colorize(commit.time, getTimeColor(commit.time, terminalCaps), terminalCaps);
                 const hashColored = colorize(commit.hash, getHashColor(terminalCaps), terminalCaps);
                 const messageColored = colorize(commit.message, getMessageColor(terminalCaps), terminalCaps);
@@ -759,7 +762,7 @@ const main = async (options) => {
 
             // Display commits grouped by date (text format only)
             if (format === 'text') {
-              const dates = Object.keys(commitsByDate).sort().reverse();
+              const dates = Object.keys(commitsByDate).sort();
               const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
               for (const date of dates) {
@@ -768,7 +771,8 @@ const main = async (options) => {
                 const dayName = dayNames[dateObj.getDay()];
 
                 console.log(`\n        📅 ${date} (${dayName})`);
-                for (const commit of commitsByDate[date]) {
+                // Display commits in chronological order (oldest first)
+                for (const commit of commitsByDate[date].slice().reverse()) {
                   const timeColored = colorize(commit.time, getTimeColor(commit.time, terminalCaps), terminalCaps);
                   const hashColored = colorize(commit.hash, getHashColor(terminalCaps), terminalCaps);
                   const messageColored = colorize(commit.message, getMessageColor(terminalCaps), terminalCaps);
