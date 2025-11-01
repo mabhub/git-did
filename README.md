@@ -30,6 +30,7 @@ standup [options] [path] [days]
 - `-s, --standup` - Enable standup mode (group commits by repository)
 - `-c, --chrono` - Enable chronological mode (group commits by date)
 - `-a, --author <email>` - Filter commits by author (email or partial name)
+- `-f, --format <type>` - Output format: text (default), json, or markdown
 - `-h, --help` - Display help information
 - `-V, --version` - Display version number
 
@@ -57,6 +58,34 @@ Groups commits by date, then by repository. Ideal for reviewing what was done ea
 
 ```bash
 standup --chrono ~/projects 7
+```
+
+## Export Formats
+
+### JSON Format
+
+Export results as structured JSON for integration with other tools or automation.
+
+```bash
+standup ~/projects 7 --format json > report.json
+```
+
+### Markdown Format
+
+Generate Markdown reports for documentation or sharing.
+
+```bash
+standup --standup ~/projects 7 --format markdown > STANDUP.md
+```
+
+### Text Format (default)
+
+Human-readable console output with colors and emojis.
+
+```bash
+standup ~/projects 7
+# or explicitly:
+standup ~/projects 7 --format text
 ```
 
 ## .standupignore File
@@ -107,6 +136,12 @@ standup --standup ~/projects 3
 
 # Chronological view with specific author
 standup --chrono --author john@example.com ~/projects 7
+
+# Export to JSON for processing
+standup ~/projects 14 --format json | jq '.repos | length'
+
+# Generate Markdown report
+standup --standup ~/projects 3 --format markdown > weekly-standup.md
 ```
 
 ## Features
@@ -119,6 +154,8 @@ standup --chrono --author john@example.com ~/projects 7
 - Permission error handling
 - `.standupignore` file support for path exclusion
 - Execution time tracking
+- Multiple output formats (text, JSON, Markdown)
+- Parallel Git operations for improved performance
 
 ## Technical Details
 
