@@ -206,21 +206,23 @@ const findActiveGitRepos = async (dirPath, days, visited = new Set(), rootPath =
     // Read directory contents
     const entries = await readdir(dirPath, { withFileTypes: true });
 
-    // Recursively traverse subdirectories
-    for (const entry of entries) {
-      if (entry.isDirectory() && !entry.name.startsWith('.')) {
+    // Recursively traverse subdirectories in parallel
+    const subdirPromises = entries
+      .filter(entry => entry.isDirectory() && !entry.name.startsWith('.'))
+      .map(entry => {
         const fullPath = join(dirPath, entry.name);
-        try {
-          const subRepos = await findActiveGitRepos(fullPath, days, visited, rootPath, ignoreRegexes);
-          activeRepos.push(...subRepos);
-        } catch (error) {
-          // Ignore permission errors, etc.
-          if (error.code !== 'EACCES' && error.code !== 'EPERM') {
-            console.error(`Error traversing ${fullPath}:`, error.message);
-          }
-        }
-      }
-    }
+        return findActiveGitRepos(fullPath, days, visited, rootPath, ignoreRegexes)
+          .catch(error => {
+            // Ignore permission errors, etc.
+            if (error.code !== 'EACCES' && error.code !== 'EPERM') {
+              console.error(`Error traversing ${fullPath}:`, error.message);
+            }
+            return [];
+          });
+      });
+
+    const subResults = await Promise.all(subdirPromises);
+    subResults.forEach(subRepos => activeRepos.push(...subRepos));
   } catch (error) {
     if (error.code !== 'EACCES' && error.code !== 'EPERM') {
       console.error(`Error reading ${dirPath}:`, error.message);
@@ -284,9 +286,13 @@ const main = async (options) => {
       const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
       const commitsByDateAndRepo = {};
 
-      // Collect all commits from all repositories
-      for (const repo of repos) {
-        const userCommits = await getUserCommits(repo, author, days);
+      // Collect all commits from all repositories in parallel
+      const commitsPromises = repos.map(repo => getUserCommits(repo, author, days));
+      const allCommits = await Promise.all(commitsPromises);
+
+      // Organize commits by date and repo
+      allCommits.forEach((userCommits, index) => {
+        const repo = repos[index];
         for (const commit of userCommits) {
           if (!commitsByDateAndRepo[commit.date]) {
             commitsByDateAndRepo[commit.date] = {};
@@ -296,7 +302,7 @@ const main = async (options) => {
           }
           commitsByDateAndRepo[commit.date][repo].push(commit);
         }
-      }
+      });
 
       // Display in reverse chronological order (most recent first)
       const dates = Object.keys(commitsByDateAndRepo).sort().reverse();
@@ -324,15 +330,28 @@ const main = async (options) => {
     }
     // Standup mode or standard mode
     else {
-      for (const repo of repos) {
-        const lastCommit = await getLastCommitDate(repo);
+      // Fetch all last commit dates in parallel
+      const lastCommitDatesPromises = repos.map(repo => getLastCommitDate(repo));
+      const lastCommitDates = await Promise.all(lastCommitDatesPromises);
+
+      // Fetch all user commits in parallel if in standup mode
+      let allUserCommits = [];
+      if (standupMode && author) {
+        const userCommitsPromises = repos.map(repo => getUserCommits(repo, author, days));
+        allUserCommits = await Promise.all(userCommitsPromises);
+      }
+
+      // Display results
+      for (let i = 0; i < repos.length; i++) {
+        const repo = repos[i];
+        const lastCommit = lastCommitDates[i];
         const daysAgo = Math.floor((Date.now() - lastCommit.getTime()) / (24 * 60 * 60 * 1000));
         console.log(`  📁 ${repo}`);
         console.log(`     └─ Last commit: ${daysAgo} day${daysAgo !== 1 ? 's' : ''} ago (${lastCommit.toLocaleDateString()})`);
 
         // Standup mode: display author's commits
         if (standupMode && author) {
-          const userCommits = await getUserCommits(repo, author, days);
+          const userCommits = allUserCommits[i];
           if (userCommits.length > 0) {
             console.log(`\n     Your commits:`);
 
