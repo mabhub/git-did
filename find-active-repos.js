@@ -233,6 +233,87 @@ const findActiveGitRepos = async (dirPath, days, visited = new Set(), rootPath =
 };
 
 /**
+ * Format results as JSON
+ * @param {Object} data - Data to format
+ * @returns {string} JSON formatted output
+ */
+const formatAsJSON = (data) => {
+  return JSON.stringify(data, null, 2);
+};
+
+/**
+ * Format results as Markdown
+ * @param {Object} data - Data to format
+ * @returns {string} Markdown formatted output
+ */
+const formatAsMarkdown = (data) => {
+  const { repos, mode, days, author, duration } = data;
+  let markdown = `# Git Activity Report\n\n`;
+  markdown += `- **Period**: Last ${days} day${days !== 1 ? 's' : ''}\n`;
+  markdown += `- **Mode**: ${mode}\n`;
+  if (author) markdown += `- **Author**: ${author}\n`;
+  markdown += `- **Repositories found**: ${repos.length}\n`;
+  markdown += `- **Execution time**: ${duration}s\n\n`;
+
+  if (repos.length === 0) {
+    markdown += `No active repositories found.\n`;
+    return markdown;
+  }
+
+  markdown += `---\n\n`;
+
+  if (mode === 'chrono' && data.commitsByDate) {
+    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const dates = Object.keys(data.commitsByDate).sort().reverse();
+
+    for (const date of dates) {
+      const dateObj = new Date(date);
+      const dayName = dayNames[dateObj.getDay()];
+      markdown += `## ${date} (${dayName})\n\n`;
+
+      const reposForDate = Object.keys(data.commitsByDate[date]);
+      for (const repo of reposForDate) {
+        markdown += `### ${repo}\n\n`;
+        const commits = data.commitsByDate[date][repo];
+        for (const commit of commits) {
+          markdown += `- **${commit.time}** \`${commit.hash}\` - ${commit.message}\n`;
+        }
+        markdown += `\n`;
+      }
+    }
+  } else {
+    for (const repo of repos) {
+      markdown += `## ${repo.path}\n\n`;
+      markdown += `- **Last commit**: ${repo.daysAgo} day${repo.daysAgo !== 1 ? 's' : ''} ago (${repo.lastCommitDate})\n\n`;
+
+      if (repo.commits && repo.commits.length > 0) {
+        markdown += `### Your commits\n\n`;
+        const commitsByDate = {};
+        repo.commits.forEach(commit => {
+          if (!commitsByDate[commit.date]) commitsByDate[commit.date] = [];
+          commitsByDate[commit.date].push(commit);
+        });
+
+        const dates = Object.keys(commitsByDate).sort().reverse();
+        const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+        for (const date of dates) {
+          const dateObj = new Date(date);
+          const dayName = dayNames[dateObj.getDay()];
+          markdown += `#### ${date} (${dayName})\n\n`;
+          for (const commit of commitsByDate[date]) {
+            markdown += `- **${commit.time}** \`${commit.hash}\` - ${commit.message}\n`;
+          }
+          markdown += `\n`;
+        }
+      }
+    }
+  }
+
+  return markdown;
+};
+
+/**
  * Main function
  * @param {Object} options - Command options
  * @param {string} options.path - Starting path for repository search
@@ -240,30 +321,51 @@ const findActiveGitRepos = async (dirPath, days, visited = new Set(), rootPath =
  * @param {boolean} options.standup - Enable standup mode
  * @param {boolean} options.chrono - Enable chronological mode
  * @param {string} [options.author] - Filter commits by author
+ * @param {string} [options.format] - Output format (text, json, markdown)
  */
 const main = async (options) => {
-  const { path: startPath, days, standup: standupMode, chrono: chronoMode, author: customAuthor } = options;
+  const { path: startPath, days, standup: standupMode, chrono: chronoMode, author: customAuthor, format = 'text' } = options;
 
   // Load .standupignore file from the search root
   const ignoreFilePath = join(startPath, '.standupignore');
   const ignorePatterns = await parseIgnoreFile(ignoreFilePath);
   const ignoreRegexes = ignorePatterns.map(patternToRegex);
 
-  if (ignorePatterns.length > 0) {
-    console.log(`� Loaded ${ignorePatterns.length} ignore pattern(s) from .standupignore\n`);
+  // Only show progress messages in text format
+  if (format === 'text') {
+    if (ignorePatterns.length > 0) {
+      console.log(`🚫 Loaded ${ignorePatterns.length} ignore pattern(s) from .standupignore\n`);
+    }
+    console.log(`� Searching for active Git repositories in: ${startPath}`);
+    console.log(`📅 Activity in the last ${days} day${days !== 1 ? 's' : ''}\n`);
   }
-
-  console.log(`�🔍 Searching for active Git repositories in: ${startPath}`);
-  console.log(`📅 Activity in the last ${days} day${days !== 1 ? 's' : ''}\n`);
 
   const startTime = Date.now();
   const repos = await findActiveGitRepos(startPath, days, new Set(), null, ignoreRegexes);
   const duration = ((Date.now() - startTime) / 1000).toFixed(2);
 
+  // Prepare data structure for output
+  const mode = chronoMode ? 'chrono' : (standupMode ? 'standup' : 'standard');
+  const outputData = {
+    repos: [],
+    mode,
+    days,
+    duration,
+    startPath
+  };
+
   if (repos.length === 0) {
-    console.log(`❌ No active Git repositories found.`);
+    if (format === 'text') {
+      console.log(`❌ No active Git repositories found.`);
+    } else if (format === 'json') {
+      console.log(formatAsJSON(outputData));
+    } else if (format === 'markdown') {
+      console.log(formatAsMarkdown(outputData));
+    }
   } else {
-    console.log(`✅ ${repos.length} active Git repositor${repos.length > 1 ? 'ies' : 'y'} found:\n`);
+    if (format === 'text') {
+      console.log(`✅ ${repos.length} active Git repositor${repos.length > 1 ? 'ies' : 'y'} found:\n`);
+    }
 
     // Determine the author to use for standup or chrono mode
     let author = null;
@@ -308,23 +410,36 @@ const main = async (options) => {
       const dates = Object.keys(commitsByDateAndRepo).sort().reverse();
 
       if (dates.length === 0) {
-        console.log('❌ No commits found for this author in the specified period.\n');
+        if (format === 'text') {
+          console.log('❌ No commits found for this author in the specified period.\n');
+        }
+        outputData.author = author;
+        outputData.commitsByDate = {};
       } else {
-        for (const date of dates) {
-          const dateObj = new Date(date);
-          const dayName = dayNames[dateObj.getDay()];
-          console.log(`📅 ${date} (${dayName})`);
-          console.log('─'.repeat(60));
+        outputData.author = author;
+        outputData.commitsByDate = commitsByDateAndRepo;
 
-          const reposForDate = Object.keys(commitsByDateAndRepo[date]);
-          for (const repo of reposForDate) {
-            console.log(`\n  📁 ${repo}`);
-            const commits = commitsByDateAndRepo[date][repo];
-            for (const commit of commits) {
-              console.log(`     ${commit.time} ${commit.hash} - ${commit.message}`);
+        if (format === 'text') {
+          for (const date of dates) {
+            const dateObj = new Date(date);
+            const dayName = dayNames[dateObj.getDay()];
+            console.log(`📅 ${date} (${dayName})`);
+            console.log('─'.repeat(60));
+
+            const reposForDate = Object.keys(commitsByDateAndRepo[date]);
+            for (const repo of reposForDate) {
+              console.log(`\n  📁 ${repo}`);
+              const commits = commitsByDateAndRepo[date][repo];
+              for (const commit of commits) {
+                console.log(`     ${commit.time} ${commit.hash} - ${commit.message}`);
+              }
             }
+            console.log('\n');
           }
-          console.log('\n');
+        } else if (format === 'json') {
+          console.log(formatAsJSON(outputData));
+        } else if (format === 'markdown') {
+          console.log(formatAsMarkdown(outputData));
         }
       }
     }
@@ -346,13 +461,16 @@ const main = async (options) => {
         const repo = repos[i];
         const lastCommit = lastCommitDates[i];
         const daysAgo = Math.floor((Date.now() - lastCommit.getTime()) / (24 * 60 * 60 * 1000));
-        console.log(`  📁 ${repo}`);
-        console.log(`     └─ Last commit: ${daysAgo} day${daysAgo !== 1 ? 's' : ''} ago (${lastCommit.toLocaleDateString()})`);
+        
+        if (format === 'text') {
+          console.log(`  📁 ${repo}`);
+          console.log(`     └─ Last commit: ${daysAgo} day${daysAgo !== 1 ? 's' : ''} ago (${lastCommit.toLocaleDateString()})`);
+        }
 
         // Standup mode: display author's commits
         if (standupMode && author) {
           const userCommits = allUserCommits[i];
-          if (userCommits.length > 0) {
+          if (userCommits.length > 0 && format === 'text') {
             console.log(`\n     Your commits:`);
 
             // Group commits by date
@@ -364,28 +482,57 @@ const main = async (options) => {
               return acc;
             }, {});
 
-            // Display commits grouped by date
-            const dates = Object.keys(commitsByDate).sort().reverse();
-            const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+            // Display commits grouped by date (text format only)
+            if (format === 'text') {
+              const dates = Object.keys(commitsByDate).sort().reverse();
+              const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
-            for (const date of dates) {
-              // Calculate day of week
-              const dateObj = new Date(date);
-              const dayName = dayNames[dateObj.getDay()];
+              for (const date of dates) {
+                // Calculate day of week
+                const dateObj = new Date(date);
+                const dayName = dayNames[dateObj.getDay()];
 
-              console.log(`\n        📅 ${date} (${dayName})`);
-              for (const commit of commitsByDate[date]) {
-                console.log(`           ${commit.time} ${commit.hash} - ${commit.message}`);
+                console.log(`\n        📅 ${date} (${dayName})`);
+                for (const commit of commitsByDate[date]) {
+                  console.log(`           ${commit.time} ${commit.hash} - ${commit.message}`);
+                }
               }
+              console.log('');
             }
-            console.log('');
           }
         }
       }
+
+      // Collect data for non-text formats
+      if (format !== 'text') {
+        outputData.repos = repos.map((repo, i) => ({
+          path: repo,
+          lastCommitDate: lastCommitDates[i].toLocaleDateString(),
+          daysAgo: Math.floor((Date.now() - lastCommitDates[i].getTime()) / (24 * 60 * 60 * 1000)),
+          commits: standupMode && author ? allUserCommits[i] : []
+        }));
+      }
+    }
+
+    // Output based on format
+    if (format === 'json') {
+      if (chronoMode && author) {
+        outputData.author = author;
+        outputData.commitsByDate = commitsByDateAndRepo;
+      }
+      console.log(formatAsJSON(outputData));
+    } else if (format === 'markdown') {
+      if (chronoMode && author) {
+        outputData.author = author;
+        outputData.commitsByDate = commitsByDateAndRepo;
+      }
+      console.log(formatAsMarkdown(outputData));
     }
   }
 
-  console.log(`\n⏱️  Execution time: ${duration}s`);
+  if (format === 'text') {
+    console.log(`\n⏱️  Execution time: ${duration}s`);
+  }
 };
 
 // CLI setup with commander
@@ -400,6 +547,7 @@ program
   .option('-s, --standup', 'Enable standup mode (group commits by repository)')
   .option('-c, --chrono', 'Enable chronological mode (group commits by date)')
   .option('-a, --author <email>', 'Filter commits by author (email or partial name)')
+  .option('-f, --format <type>', 'Output format: text, json, or markdown', 'text')
   .action(async (pathArg, daysArg, options) => {
     try {
       await main({
@@ -407,7 +555,8 @@ program
         days: parseInt(daysArg, 10),
         standup: options.standup,
         chrono: options.chrono,
-        author: options.author
+        author: options.author,
+        format: options.format
       });
     } catch (error) {
       console.error('Error:', error.message);
