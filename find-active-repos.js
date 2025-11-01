@@ -1,12 +1,69 @@
 #!/usr/bin/env node
 
-import { readdir, stat } from 'node:fs/promises';
-import { join } from 'node:path';
+import { readdir, stat, readFile } from 'node:fs/promises';
+import { join, relative, sep } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { Command } from 'commander';
 
 const execFileAsync = promisify(execFile);
+
+/**
+ * Parse .standupignore file and return array of patterns
+ * @param {string} filePath - Path to .standupignore file
+ * @returns {Promise<string[]>} Array of ignore patterns
+ */
+const parseIgnoreFile = async (filePath) => {
+  try {
+    const content = await readFile(filePath, 'utf-8');
+    return content
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line && !line.startsWith('#')); // Remove empty lines and comments
+  } catch {
+    return []; // File doesn't exist or can't be read
+  }
+};
+
+/**
+ * Convert gitignore-style pattern to regex
+ * @param {string} pattern - Gitignore-style pattern
+ * @returns {RegExp} Regular expression matching the pattern
+ */
+const patternToRegex = (pattern) => {
+  // Escape special regex characters except * and ?
+  let regexPattern = pattern
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*/g, '.*')
+    .replace(/\?/g, '.');
+
+  // Handle directory-only patterns (ending with /)
+  if (pattern.endsWith('/')) {
+    regexPattern = `${regexPattern.slice(0, -2)}(/.*)?$`;
+  } else {
+    regexPattern = `${regexPattern}(/.*)?$`;
+  }
+
+  // Handle patterns starting with / (absolute from search root)
+  if (pattern.startsWith('/')) {
+    regexPattern = `^${regexPattern.slice(2)}`;
+  } else {
+    // Pattern can match anywhere in the path
+    regexPattern = `(^|/)${regexPattern}`;
+  }
+
+  return new RegExp(regexPattern);
+};
+
+/**
+ * Check if a path should be ignored based on ignore patterns
+ * @param {string} path - Path to check (relative to search root)
+ * @param {RegExp[]} ignoreRegexes - Array of ignore pattern regexes
+ * @returns {boolean} True if path should be ignored
+ */
+const shouldIgnorePath = (path, ignoreRegexes) => {
+  return ignoreRegexes.some(regex => regex.test(path));
+};
 
 /**
  * Check if a directory is a Git repository
@@ -107,10 +164,17 @@ const hasRecentActivity = async (repoPath, days) => {
  * @param {string} dirPath - Directory path to traverse
  * @param {number} days - Number of days of activity
  * @param {Set<string>} visited - Set of already visited paths (to avoid loops)
+ * @param {string} rootPath - Root path for relative path calculation
+ * @param {RegExp[]} ignoreRegexes - Array of ignore pattern regexes
  * @returns {Promise<string[]>}
  */
-const findActiveGitRepos = async (dirPath, days, visited = new Set()) => {
+const findActiveGitRepos = async (dirPath, days, visited = new Set(), rootPath = null, ignoreRegexes = []) => {
   const activeRepos = [];
+  
+  // Set root path on first call
+  if (rootPath === null) {
+    rootPath = dirPath;
+  }
 
   // Avoid infinite loops with symbolic links
   try {
@@ -121,6 +185,12 @@ const findActiveGitRepos = async (dirPath, days, visited = new Set()) => {
 
   if (visited.has(dirPath)) return activeRepos;
   visited.add(dirPath);
+
+  // Check if this path should be ignored
+  const relativePath = relative(rootPath, dirPath);
+  if (relativePath && shouldIgnorePath(relativePath, ignoreRegexes)) {
+    return activeRepos;
+  }
 
   try {
     // Check if it's a Git repository
@@ -141,7 +211,7 @@ const findActiveGitRepos = async (dirPath, days, visited = new Set()) => {
       if (entry.isDirectory() && !entry.name.startsWith('.')) {
         const fullPath = join(dirPath, entry.name);
         try {
-          const subRepos = await findActiveGitRepos(fullPath, days, visited);
+          const subRepos = await findActiveGitRepos(fullPath, days, visited, rootPath, ignoreRegexes);
           activeRepos.push(...subRepos);
         } catch (error) {
           // Ignore permission errors, etc.
@@ -172,11 +242,20 @@ const findActiveGitRepos = async (dirPath, days, visited = new Set()) => {
 const main = async (options) => {
   const { path: startPath, days, standup: standupMode, chrono: chronoMode, author: customAuthor } = options;
 
-  console.log(`🔍 Searching for active Git repositories in: ${startPath}`);
+  // Load .standupignore file from the search root
+  const ignoreFilePath = join(startPath, '.standupignore');
+  const ignorePatterns = await parseIgnoreFile(ignoreFilePath);
+  const ignoreRegexes = ignorePatterns.map(patternToRegex);
+
+  if (ignorePatterns.length > 0) {
+    console.log(`� Loaded ${ignorePatterns.length} ignore pattern(s) from .standupignore\n`);
+  }
+
+  console.log(`�🔍 Searching for active Git repositories in: ${startPath}`);
   console.log(`📅 Activity in the last ${days} day${days !== 1 ? 's' : ''}\n`);
 
   const startTime = Date.now();
-  const repos = await findActiveGitRepos(startPath, days);
+  const repos = await findActiveGitRepos(startPath, days, new Set(), null, ignoreRegexes);
   const duration = ((Date.now() - startTime) / 1000).toFixed(2);
 
   if (repos.length === 0) {

@@ -1,0 +1,26 @@
+# .standupignore example file
+# Use gitignore-like syntax to exclude paths from standup tracking
+
+# Ignore node_modules in any directory
+node_modules/
+
+# Ignore all directories starting with "test"
+test*/
+
+# Ignore specific directories from root
+/tmp/
+/cache/
+
+# Ignore directories containing "vendor" or "lib"
+*vendor*/
+*lib*/
+
+# Ignore build and dist directories
+build/
+dist/
+
+# Ignore hidden directories (except .git which is handled separately)
+.*
+
+# Ignore specific project
+/old-project/
