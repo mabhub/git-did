@@ -1,12 +1,30 @@
 #!/usr/bin/env node
 
 import { readdir, stat, readFile } from 'node:fs/promises';
-import { join, relative } from 'node:path';
+import { join, relative, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { Command } from 'commander';
 
 const execFileAsync = promisify(execFile);
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+/**
+ * Read package.json version
+ * @returns {Promise<string>} Package version
+ */
+const getPackageVersion = async () => {
+  try {
+    const packageJsonPath = join(__dirname, 'package.json');
+    const packageJson = JSON.parse(await readFile(packageJsonPath, 'utf-8'));
+    return packageJson.version || '0.0.0';
+  } catch {
+    return '0.0.0';
+  }
+};
 
 /**
  * Parse and validate a date string in YYYY-MM-DD format
@@ -970,10 +988,12 @@ const main = async (options) => {
 // CLI setup with commander
 const program = new Command();
 
+const packageVersion = await getPackageVersion();
+
 program
   .name('git-did')
   .description('Git activity tracker for standup meetings and project monitoring')
-  .version('0.2.0')
+  .version(packageVersion)
   .argument('[path]', 'Starting path for repository search', '.')
   .argument('[days]', 'Number of days to look back')
   .option('-p, --project', 'Enable project mode (group by project first, then by date)')
