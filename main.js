@@ -994,8 +994,8 @@ program
   .name('git-did')
   .description('Git activity tracker for standup meetings and project monitoring')
   .version(packageVersion)
-  .argument('[path]', 'Starting path for repository search', '.')
   .argument('[days]', 'Number of days to look back')
+  .argument('[path]', 'Starting path for repository search', '.')
   .option('-p, --project', 'Enable project mode (group by project first, then by date)')
   .option('-s, --short', 'Short mode (only show last commit date without details)')
   .option('-a, --author <email>', 'Filter commits by author (email or partial name)')
@@ -1004,11 +1004,31 @@ program
   .option('--until <date>', 'End date for activity search (YYYY-MM-DD, default: today)')
   .option('--color', 'Force color output (even for non-TTY)')
   .option('--no-color', 'Disable color output')
-  .action(async (pathArg, daysArg, options) => {
+  .action(async (daysArg, pathArg, options) => {
     try {
+      // Smart argument parsing: detect if first arg is a number or a path
+      let days, path;
+
+      // If daysArg looks like a number, use it as days
+      const parsedDays = parseInt(daysArg, 10);
+      if (!isNaN(parsedDays) && String(parsedDays) === String(daysArg)) {
+        days = parsedDays;
+        path = pathArg || '.';
+      }
+      // Otherwise, treat daysArg as path (user provided path only)
+      else if (daysArg) {
+        days = undefined;
+        path = daysArg;
+      }
+      // No arguments provided
+      else {
+        days = undefined;
+        path = '.';
+      }
+
       await main({
-        path: pathArg || '.',
-        days: daysArg ? parseInt(daysArg, 10) : undefined,
+        path,
+        days,
         since: options.since,
         until: options.until,
         project: options.project,

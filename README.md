@@ -17,28 +17,37 @@ npm install --global https://github.com/mabhub/git-did
 ## Usage
 
 ```bash
-git-did [path] [days]
+git-did [days] [path]
 # or via git:
-git did [path] [days]
+git did [days] [path]
 ```
 
-Show git activity in `[path]` for the last `[days]` days (default: current directory, 7 days).
+Show git activity for the last `[days]` days in `[path]` (default: 7 days, current directory).
 
 ```bash
 # Current directory, last 7 days
 git-did
 
+# 14 days in current directory
+git-did 14
+
+# Specific path (default 7 days)
+git-did ~/projects
+
 # Specific path and timeframe
-git-did ~/projects 14
+git-did 14 ~/projects
 
 # Project mode (group by repository)
-git-did --project ~/projects 3
+git-did --project 3 ~/projects
 
 # Output formats: text (default), json, markdown
-git-did --format json ~/projects 7 > report.json
+git-did --format json 7 ~/projects > report.json
 
 # Date ranges
 git-did --since 2025-10-25 --until 2025-10-31 ~/projects
+
+# Works great with xargs
+find ~/projects -type d -name ".git" -exec dirname {} \; | xargs -I {} git-did 30 {}
 ```
 
 Use `git-did --help` for all available options.
@@ -64,13 +73,13 @@ CLI arguments always override configuration values.
 
 ```bash
 # Filter by author
-git-did --author john@example.com ~/projects
+git-did --author john@example.com 7 ~/projects
 
 # Short mode (overview only)
-git-did --short ~/projects 7
+git-did --short 7 ~/projects
 
 # Combined modes
-git-did -ps ~/projects 14
+git-did -ps 14 ~/projects
 ```
 
 ## Features
