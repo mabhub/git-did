@@ -5,307 +5,71 @@ Git activity tracker for standup meetings and project monitoring.
 ## Installation
 
 ```bash
-npm install
+npm install --global git-did
 ```
 
-For global installation:
+Or install from GitHub sources:
 
 ```bash
-npm link
+npm install --global https://github.com/mabhub/git-did
 ```
 
 ## Usage
 
 ```bash
-git-did [options] [path] [days]
+git-did [path] [days]
+# or via git:
+git did [path] [days]
 ```
 
-### Arguments
-
-- `path` - Starting path for repository search (default: current directory)
-- `days` - Number of days to look back (default: 7)
-
-### Options
-
-- `-p, --project` - Enable project mode (group by project first, then by date)
-- `-s, --short` - Short mode (only show last commit date without details)
-- `-a, --author <email>` - Filter commits by author (email or partial name)
-- `-f, --format <type>` - Output format: text (default), json, or markdown
-- `--since <date>` - Start date for activity search (YYYY-MM-DD format)
-- `--until <date>` - End date for activity search (YYYY-MM-DD format, default: today)
-- `--color` - Force color output (even for non-TTY)
-- `--no-color` - Disable color output
-- `-h, --help` - Display help information
-- `-V, --version` - Display version number
-
-## Date Range Selection
-
-By default, the tool searches for activity in the last N days (default: 7). You can also specify exact date ranges:
-
-### Using days parameter (default)
+Show git activity in `[path]` for the last `[days]` days (default: current directory, 7 days).
 
 ```bash
-git-did ~/projects 7        # Last 7 days
-git-did ~/projects 14       # Last 14 days
-```
+# Current directory, last 7 days
+git-did
 
-### Using --since and --until options
+# Specific path and timeframe
+git-did ~/projects 14
 
-```bash
-# Activity since a specific date (until today)
-git-did --since 2025-10-25 ~/projects
-
-# Activity in a specific date range
-git-did --since 2025-10-01 --until 2025-10-31 ~/projects
-
-# Combine with other options
-git-did --standup --since 2025-11-01 ~/projects
-```
-
-**Date format**: Dates must be in `YYYY-MM-DD` format (ISO 8601).
-
-**Validation**:
-
-- Invalid date formats will show an error message
-- `--since` date must be before `--until` date
-- `--until` defaults to today if not specified
-
-## Display Modes
-
-### Default Mode (chronological)
-
-Groups commits by date, then by repository. Ideal for reviewing what was done each day.
-
-```bash
-git-did ~/projects 7
-```
-
-### Project Mode (`--project` or `-p`)
-
-Groups commits by repository first, then by date. Perfect for preparing daily standups.
-
-```bash
+# Project mode (group by repository)
 git-did --project ~/projects 3
-# or short alias
-git-did -p ~/projects 3
+
+# Output formats: text (default), json, markdown
+git-did --format json ~/projects 7 > report.json
+
+# Date ranges
+git-did --since 2025-10-25 --until 2025-10-31 ~/projects
 ```
 
-### Short Mode (`--short` or `-s`)
-
-Lists repositories with only the last commit date, without detailed commit lists.
-
-```bash
-git-did --short ~/projects 7
-# or short alias
-git-did -s ~/projects 7
-```
-
-### Combined Modes
-
-Combine `--project` and `--short` for a quick overview grouped by project:
-
-```bash
-git-did --project --short ~/projects 7
-# or with aliases
-git-did -ps ~/projects 7
-```
-
-## Export Formats
-
-### JSON Format
-
-Export results as structured JSON for integration with other tools or automation.
-
-```bash
-git-did ~/projects 7 --format json > report.json
-```
-
-### Markdown Format
-
-Generate Markdown reports for documentation or sharing.
-
-```bash
-git-did --standup ~/projects 7 --format markdown > STANDUP.md
-```
-
-### Text Format (default)
-
-Human-readable console output with colors and emojis.
-
-```bash
-git-did ~/projects 7
-# or explicitly:
-git-did ~/projects 7 --format text
-```
-
-#### Color Support
-
-The text format automatically detects terminal capabilities and applies colors:
-
-- **Interactive terminals**: Colors enabled by default
-- **Non-TTY (piped/redirected)**: Colors disabled by default
-- **True color (24-bit)**: Full RGB color palette when supported
-- **256 colors**: Extended color palette for xterm-256color terminals
-- **Basic colors**: ANSI colors for standard terminals
-
-Color scheme:
-
-- **Commit hashes**: Cyan/Sky blue (visible on both dark and light backgrounds)
-- **Commit messages**: Medium gray (neutral, works on all backgrounds)
-- **Times**: Color-coded by time of day
-  - Morning (6-12h): Gold/Yellow
-  - Afternoon (12-18h): Green
-  - Evening (18-22h): Orange
-  - Night (22-6h): Purple/Magenta
-
-Force or disable colors:
-
-```bash
-# Force colors even when piping
-git-did ~/projects 7 --color | less -R
-
-# Disable colors
-git-did ~/projects 7 --no-color
-```
+Use `git-did --help` for all available options.
 
 ## Configuration
 
-`git-did` can be configured using `git config`, allowing you to set default behaviors at system, global, or local (repository) levels.
-
-### Available Configuration Options
-
-| Configuration Key   | Type    | Description                                          | Default          |
-|---------------------|---------|------------------------------------------------------|------------------|
-| `did.defaultDays`   | integer | Default number of days to look back                  | `7`              |
-| `did.defaultMode`   | string  | Default display mode (`default`, `project`, `short`) | `default`        |
-| `did.colors`        | string  | Color mode (`auto`, `always`, `never`)               | `auto`           |
-| `did.defaultFormat` | string  | Default output format (`text`, `json`, `markdown`)   | `text`           |
-| `did.defaultAuthor` | string  | Default author filter (email or name pattern)        | *(current user)* |
-
-### Configuration Examples
+Configure default behaviors using `git config`:
 
 ```bash
-# Set default to 14 days (global)
+# Examples (global configuration)
 git config --global did.defaultDays 14
-
-# Set default mode to project view (global)
 git config --global did.defaultMode project
-
-# Always use colors (global)
 git config --global did.colors always
-
-# Set default format to markdown (global)
 git config --global did.defaultFormat markdown
-
-# Set default author filter (global)
-git config --global did.defaultAuthor "john@example.com"
-
-# Override for a specific repository (local)
-cd ~/my-project
-git config --local did.defaultDays 30
-git config --local did.defaultMode short
+git config --global did.defaultAuthor "user@example.com"
 ```
 
-### Configuration Priority
+Available configuration keys: `did.defaultDays`, `did.defaultMode`, `did.colors`, `did.defaultFormat`, `did.defaultAuthor`.
 
-Configuration follows Git's standard priority order:
+CLI arguments always override configuration values.
 
-1. **CLI arguments** (highest priority)
-2. **Local repository config** (`git config --local`)
-3. **Global user config** (`git config --global`)
-4. **System config** (`git config --system`)
-5. **Default values** (lowest priority)
-
-**Example**: If you have `did.defaultDays` set to `14` globally and `21` locally, running `git-did` without arguments will use `21` days. But `git-did . 7` will always use `7` days (CLI takes precedence).
-
-### Viewing Configuration
+## More Examples
 
 ```bash
-# View all git-did configuration
-git config --list | grep did
+# Filter by author
+git-did --author john@example.com ~/projects
 
-# View specific configuration value
-git config did.defaultDays
-
-# View with scope information
-git config --show-origin --list | grep did
-```
-
-### Removing Configuration
-
-```bash
-# Remove global configuration
-git config --global --unset did.defaultDays
-
-# Remove local configuration
-git config --local --unset did.defaultMode
-```
-
-## .didignore File
-
-You can exclude specific directories from the search by creating a `.didignore` file in the search root directory. The syntax is similar to `.gitignore`.
-
-### Example .didignore
-
-```
-# Ignore node_modules in any directory
-node_modules/
-
-# Ignore all directories starting with "test"
-test*/
-
-# Ignore specific directories from root
-/tmp/
-/cache/
-
-# Ignore directories containing "vendor"
-*vendor*/
-
-# Ignore build directories
-build/
-dist/
-```
-
-### Pattern Rules
-
-- Lines starting with `#` are comments
-- Empty lines are ignored
-- Patterns ending with `/` match directories only
-- Patterns starting with `/` are relative to the search root
-- Use `*` as wildcard for any characters
-- Use `?` as wildcard for a single character
-
-## Examples
-
-```bash
-# Find all active repos in current directory (last 7 days) - chronological view
-git-did
-
-# Find active repos in specific directory (last 14 days)
-git-did ~/projects 14
-
-# Project mode for last 3 days (grouped by project)
-git-did --project ~/projects 3
-
-# Short mode - quick overview
+# Short mode (overview only)
 git-did --short ~/projects 7
 
-# Chronological view with specific author (default mode)
-git-did --author john@example.com ~/projects 7
-
-# Export to JSON for processing
-git-did ~/projects 14 --format json | jq '.repos | length'
-
-# Generate Markdown report in project mode
-git-did --project ~/projects 3 --format markdown > weekly-standup.md
-
-# Activity for a specific date range
-git-did --since 2025-10-01 --until 2025-10-31 ~/projects
-
-# Combine date range with project mode
-git-did --project --since 2025-10-25 ~/projects
-
-# Quick project overview (project + short modes)
+# Combined modes
 git-did -ps ~/projects 14
 ```
 
@@ -315,7 +79,7 @@ git-did -ps ~/projects 14
 - Multiple display modes (default, project, short)
 - Author-based commit filtering
 - Configurable time period
-- **Git config integration** for persistent preferences
+- Git config integration for persistent preferences
 - Symbolic link loop detection
 - Permission error handling
 - `.didignore` file support for path exclusion
@@ -325,11 +89,3 @@ git-did -ps ~/projects 14
 - Smart color detection with 24-bit true color support
 - Time-of-day color coding for commit timestamps
 - Flexible date range selection (days or exact dates)
-
-## Technical Details
-
-- Built with Node.js ES modules
-- Uses native Node.js APIs (fs/promises, child_process)
-- Secure command execution with execFile
-- Pure functional approach
-- Comprehensive error handling
