@@ -268,6 +268,20 @@ const colorize = (text, colorCode, caps) => {
 };
 
 /**
+ * Format repository path for display
+ * Add directory name in parentheses if path is '.'
+ * @param {string} repoPath - Repository path
+ * @returns {string} Formatted path for display
+ */
+const formatRepoPath = (repoPath) => {
+  if (repoPath === '.') {
+    const dirName = process.cwd().split('/').pop();
+    return `. (${dirName})`;
+  }
+  return repoPath;
+};
+
+/**
  * Parse .didignore file and return array of patterns
  * @param {string} filePath - Path to .didignore file
  * @returns {Promise<string[]>} Array of ignore patterns
@@ -875,7 +889,7 @@ const main = async (options) => {
 
             const reposForDate = Object.keys(commitsByDateAndRepo[date]);
             for (const repo of reposForDate) {
-              console.log(`\n  📁 ${repo}`);
+              console.log(`\n  📁 ${formatRepoPath(repo)}`);
               const commits = commitsByDateAndRepo[date][repo];
               // Display commits in chronological order (oldest first)
               for (const commit of commits.reverse()) {
@@ -914,7 +928,7 @@ const main = async (options) => {
         const daysAgo = Math.floor((Date.now() - lastCommit.getTime()) / (24 * 60 * 60 * 1000));
 
         if (format === 'text') {
-          console.log(`  📁 ${repo}`);
+          console.log(`  📁 ${formatRepoPath(repo)}`);
           const daysAgoText = `${daysAgo} day${daysAgo !== 1 ? 's' : ''} ago`;
           const daysAgoColored = colorize(daysAgoText, getDaysAgoColor(daysAgo, terminalCaps), terminalCaps);
           const dateText = colorize(formatDate(lastCommit), getMessageColor(terminalCaps), terminalCaps);
