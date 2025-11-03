@@ -13,6 +13,21 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 /**
+ * Day names for formatting dates
+ */
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+/**
+ * Milliseconds per day constant
+ */
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/**
+ * Separator line length for text output
+ */
+const SEPARATOR_LENGTH = 60;
+
+/**
  * Read package.json version
  * @returns {Promise<string>} Package version
  */
@@ -68,6 +83,9 @@ const formatDate = (date) => {
  * @param {string} [since] - Start date (YYYY-MM-DD)
  * @param {string} [until] - End date (YYYY-MM-DD)
  * @returns {Object} Date range with since and until dates
+ * @throws {Error} If --since date format is invalid
+ * @throws {Error} If --until date format is invalid
+ * @throws {Error} If --since date is after --until date
  */
 const calculateDateRange = (days, since, until) => {
   let sinceDate, untilDate;
@@ -92,7 +110,7 @@ const calculateDateRange = (days, since, until) => {
 
   // If since is not provided, calculate it from days
   if (!sinceDate) {
-    sinceDate = new Date(untilDate.getTime() - days * 24 * 60 * 60 * 1000);
+    sinceDate = new Date(untilDate.getTime() - days * MS_PER_DAY);
   }
 
   // Validate that since is before until
@@ -393,15 +411,6 @@ const getCurrentUserEmail = async () => {
 };
 
 /**
- * Detect if the script was called as a Git subcommand
- * @returns {boolean} True if called via 'git did', false if called directly as 'git-did'
- */
-const _isCalledViaGit = () => {
-  // Git sets GIT_EXEC_PATH when running commands as subcommands
-  return process.env.GIT_EXEC_PATH !== undefined;
-};
-
-/**
  * Read a git-did configuration value from git config
  * Checks local, global, and system config in order of priority
  * @param {string} key - Configuration key (without 'did.' prefix)
@@ -670,12 +679,11 @@ const formatAsMarkdown = (data) => {
 
   // Default mode (chronological): group by date, then by project
   if (mode === 'default' && data.commitsByDate) {
-    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const dates = Object.keys(data.commitsByDate).sort();
 
     for (const date of dates) {
       const dateObj = new Date(date);
-      const dayName = dayNames[dateObj.getDay()];
+      const dayName = DAY_NAMES[dateObj.getDay()];
       markdown += `## ${date} (${dayName})\n\n`;
 
       const reposForDate = Object.keys(data.commitsByDate[date]);
@@ -711,11 +719,10 @@ const formatAsMarkdown = (data) => {
       });
 
       const dates = Object.keys(commitsByDate).sort();
-      const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
       for (const date of dates) {
         const dateObj = new Date(date);
-        const dayName = dayNames[dateObj.getDay()];
+        const dayName = DAY_NAMES[dateObj.getDay()];
         markdown += `#### ${date} (${dayName})\n\n`;
         // Display commits in chronological order (oldest first)
         for (const commit of commitsByDate[date].slice().reverse()) {
@@ -741,6 +748,7 @@ const formatAsMarkdown = (data) => {
  * @param {string} [options.author] - Filter commits by author
  * @param {string} [options.format] - Output format (text, json, markdown)
  * @param {boolean} [options.color] - Color option (true to force, false to disable, undefined for auto)
+ * @throws {Error} If date range calculation fails (invalid dates or date order)
  */
 const main = async (options) => {
   // Load configuration from git config
@@ -857,7 +865,6 @@ const main = async (options) => {
 
     // Default mode (chrono): chronological display by day, then by project
     if (!projectMode && !shortMode && author) {
-      const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
       const commitsByDateAndRepo = {};
 
       // Collect all commits from all repositories in parallel
@@ -890,19 +897,16 @@ const main = async (options) => {
       } else {
         outputData.author = author;
         outputData.commitsByDate = commitsByDateAndRepo;
-        outputData.repos = Object.keys(commitsByDateAndRepo.flatMap ? commitsByDateAndRepo : {}).reduce((unique, date) => {
-          Object.keys(commitsByDateAndRepo[date]).forEach(repo => {
-            if (!unique.includes(repo)) unique.push(repo);
-          });
-          return unique;
-        }, []);
+        outputData.repos = [...new Set(
+          Object.values(commitsByDateAndRepo).flatMap(dateData => Object.keys(dateData))
+        )];
 
         if (format === 'text') {
           for (const date of dates) {
             const dateObj = new Date(date);
-            const dayName = dayNames[dateObj.getDay()];
+            const dayName = DAY_NAMES[dateObj.getDay()];
             console.log(`📅 ${date} (${dayName})`);
-            console.log('─'.repeat(60));
+            console.log('─'.repeat(SEPARATOR_LENGTH));
 
             const reposForDate = Object.keys(commitsByDateAndRepo[date]);
             for (const repo of reposForDate) {
@@ -942,7 +946,7 @@ const main = async (options) => {
       for (let i = 0; i < repos.length; i++) {
         const repo = repos[i];
         const lastCommit = lastCommitDates[i];
-        const daysAgo = Math.floor((Date.now() - lastCommit.getTime()) / (24 * 60 * 60 * 1000));
+        const daysAgo = Math.floor((Date.now() - lastCommit.getTime()) / MS_PER_DAY);
 
         if (format === 'text') {
           console.log(`  📁 ${formatRepoPath(repo)}`);
@@ -970,12 +974,11 @@ const main = async (options) => {
             // Display commits grouped by date (text format only)
             if (format === 'text') {
               const dates = Object.keys(commitsByDate).sort();
-              const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
               for (const date of dates) {
                 // Calculate day of week
                 const dateObj = new Date(date);
-                const dayName = dayNames[dateObj.getDay()];
+                const dayName = DAY_NAMES[dateObj.getDay()];
 
                 console.log(`\n        📅 ${date} (${dayName})`);
                 // Display commits in chronological order (oldest first)
@@ -997,7 +1000,7 @@ const main = async (options) => {
         outputData.repos = repos.map((repo, i) => ({
           path: repo,
           lastCommitDate: formatDate(lastCommitDates[i]),
-          daysAgo: Math.floor((Date.now() - lastCommitDates[i].getTime()) / (24 * 60 * 60 * 1000)),
+          daysAgo: Math.floor((Date.now() - lastCommitDates[i].getTime()) / MS_PER_DAY),
           commits: projectMode && !shortMode && author ? allUserCommits[i] : []
         }));
 
