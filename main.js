@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { readdir, stat, readFile } from 'node:fs/promises';
-import { join, relative, dirname } from 'node:path';
+import { join, relative, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -39,6 +39,11 @@ const parseDate = (dateString) => {
 
   const date = new Date(dateString);
   if (isNaN(date.getTime())) {
+    return null;
+  }
+
+  // Verify that the date wasn't normalized (e.g., 2025-02-30 -> 2025-03-02)
+  if (formatDate(date) !== dateString) {
     return null;
   }
 
@@ -275,7 +280,7 @@ const colorize = (text, colorCode, caps) => {
  */
 const formatRepoPath = (repoPath) => {
   if (repoPath === '.') {
-    const dirName = process.cwd().split('/').pop();
+    const dirName = basename(process.cwd());
     return `. (${dirName})`;
   }
   return repoPath;
@@ -301,31 +306,37 @@ const parseIgnoreFile = async (filePath) => {
 /**
  * Convert gitignore-style pattern to regex
  * @param {string} pattern - Gitignore-style pattern
- * @returns {RegExp} Regular expression matching the pattern
+ * @returns {RegExp|null} Regular expression matching the pattern, or null if invalid
  */
 const patternToRegex = (pattern) => {
-  // Escape special regex characters except * and ?
-  let regexPattern = pattern
-    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-    .replace(/\*/g, '.*')
-    .replace(/\?/g, '.');
+  try {
+    // Escape special regex characters except * and ?
+    let regexPattern = pattern
+      .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+      .replace(/\*/g, '.*')
+      .replace(/\?/g, '.');
 
-  // Handle directory-only patterns (ending with /)
-  if (pattern.endsWith('/')) {
-    regexPattern = `${regexPattern.slice(0, -2)}(/.*)?$`;
-  } else {
-    regexPattern = `${regexPattern}(/.*)?$`;
+    // Handle directory-only patterns (ending with /)
+    if (pattern.endsWith('/')) {
+      regexPattern = `${regexPattern.slice(0, -2)}(/.*)?$`;
+    } else {
+      regexPattern = `${regexPattern}(/.*)?$`;
+    }
+
+    // Handle patterns starting with / (absolute from search root)
+    if (pattern.startsWith('/')) {
+      regexPattern = `^${regexPattern.slice(2)}`;
+    } else {
+      // Pattern can match anywhere in the path
+      regexPattern = `(^|/)${regexPattern}`;
+    }
+
+    return new RegExp(regexPattern);
+  } catch {
+    // Invalid regex pattern, skip it
+    console.warn(`Warning: Invalid pattern in .didignore: "${pattern}"`);
+    return null;
   }
-
-  // Handle patterns starting with / (absolute from search root)
-  if (pattern.startsWith('/')) {
-    regexPattern = `^${regexPattern.slice(2)}`;
-  } else {
-    // Pattern can match anywhere in the path
-    regexPattern = `(^|/)${regexPattern}`;
-  }
-
-  return new RegExp(regexPattern);
 };
 
 /**
@@ -511,7 +522,13 @@ const getUserCommits = async (repoPath, author, sinceDate, untilDate) => {
       .trim()
       .split('\n')
       .map(line => {
-        const [hash, message, date, timestamp, isoDate] = line.split('|');
+        const parts = line.split('|');
+        const hash = parts[0];
+        const date = parts[2];
+        const timestamp = parts[3];
+        const isoDate = parts[4];
+        // Message is everything between first and third pipe (handles pipes in message)
+        const message = parts.slice(1, -3).join('|');
         const time = isoDate.split('T')[1].substring(0, 5); // Extract HH:MM
         return { hash, message, date, time, timestamp: parseInt(timestamp, 10) };
       });
@@ -776,7 +793,7 @@ const main = async (options) => {
   // Load .didignore file from the search root
   const ignoreFilePath = join(startPath, '.didignore');
   const ignorePatterns = await parseIgnoreFile(ignoreFilePath);
-  const ignoreRegexes = ignorePatterns.map(patternToRegex);
+  const ignoreRegexes = ignorePatterns.map(patternToRegex).filter(Boolean);
 
   // Only show progress messages in text format
   if (format === 'text') {
