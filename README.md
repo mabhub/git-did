@@ -168,6 +168,79 @@ git-did ~/projects 7 --color | less -R
 git-did ~/projects 7 --no-color
 ```
 
+## Configuration
+
+`git-did` can be configured using `git config`, allowing you to set default behaviors at system, global, or local (repository) levels.
+
+### Available Configuration Options
+
+| Configuration Key   | Type    | Description                                          | Default          |
+|---------------------|---------|------------------------------------------------------|------------------|
+| `did.defaultDays`   | integer | Default number of days to look back                  | `7`              |
+| `did.defaultMode`   | string  | Default display mode (`default`, `project`, `short`) | `default`        |
+| `did.colors`        | string  | Color mode (`auto`, `always`, `never`)               | `auto`           |
+| `did.defaultFormat` | string  | Default output format (`text`, `json`, `markdown`)   | `text`           |
+| `did.defaultAuthor` | string  | Default author filter (email or name pattern)        | *(current user)* |
+
+### Configuration Examples
+
+```bash
+# Set default to 14 days (global)
+git config --global did.defaultDays 14
+
+# Set default mode to project view (global)
+git config --global did.defaultMode project
+
+# Always use colors (global)
+git config --global did.colors always
+
+# Set default format to markdown (global)
+git config --global did.defaultFormat markdown
+
+# Set default author filter (global)
+git config --global did.defaultAuthor "john@example.com"
+
+# Override for a specific repository (local)
+cd ~/my-project
+git config --local did.defaultDays 30
+git config --local did.defaultMode short
+```
+
+### Configuration Priority
+
+Configuration follows Git's standard priority order:
+
+1. **CLI arguments** (highest priority)
+2. **Local repository config** (`git config --local`)
+3. **Global user config** (`git config --global`)
+4. **System config** (`git config --system`)
+5. **Default values** (lowest priority)
+
+**Example**: If you have `did.defaultDays` set to `14` globally and `21` locally, running `git-did` without arguments will use `21` days. But `git-did . 7` will always use `7` days (CLI takes precedence).
+
+### Viewing Configuration
+
+```bash
+# View all git-did configuration
+git config --list | grep did
+
+# View specific configuration value
+git config did.defaultDays
+
+# View with scope information
+git config --show-origin --list | grep did
+```
+
+### Removing Configuration
+
+```bash
+# Remove global configuration
+git config --global --unset did.defaultDays
+
+# Remove local configuration
+git config --local --unset did.defaultMode
+```
+
 ## .didignore File
 
 You can exclude specific directories from the search by creating a `.didignore` file in the search root directory. The syntax is similar to `.gitignore`.
@@ -239,9 +312,10 @@ git-did -ps ~/projects 14
 ## Features
 
 - Recursive Git repository discovery
-- Multiple display modes (standard, standup, chronological)
+- Multiple display modes (default, project, short)
 - Author-based commit filtering
 - Configurable time period
+- **Git config integration** for persistent preferences
 - Symbolic link loop detection
 - Permission error handling
 - `.didignore` file support for path exclusion

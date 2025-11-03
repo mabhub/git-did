@@ -350,6 +350,108 @@ const getCurrentUserEmail = async () => {
 };
 
 /**
+ * Detect if the script was called as a Git subcommand
+ * @returns {boolean} True if called via 'git did', false if called directly as 'git-did'
+ */
+const _isCalledViaGit = () => {
+  // Git sets GIT_EXEC_PATH when running commands as subcommands
+  return process.env.GIT_EXEC_PATH !== undefined;
+};
+
+/**
+ * Read a git-did configuration value from git config
+ * Checks local, global, and system config in order of priority
+ * @param {string} key - Configuration key (without 'did.' prefix)
+ * @param {string} [defaultValue] - Default value if not found
+ * @returns {Promise<string|null>} Configuration value or default
+ */
+const getGitConfig = async (key, defaultValue = null) => {
+  try {
+    // Try to get value without specifying scope (respects git config priority)
+    const { stdout } = await execFileAsync('git', ['config', `did.${key}`]);
+    return stdout.trim() || defaultValue;
+  } catch {
+    return defaultValue;
+  }
+};
+
+/**
+ * Read all git-did configuration values
+ * @returns {Promise<Object>} Configuration object
+ */
+const loadGitConfig = async () => {
+  const config = {};
+
+  // Load all supported configuration keys
+  const keys = [
+    'defaultDays',
+    'defaultMode',
+    'colors',
+    'defaultFormat',
+    'defaultAuthor'
+  ];
+
+  await Promise.all(
+    keys.map(async (key) => {
+      const value = await getGitConfig(key);
+      if (value !== null) {
+        config[key] = value;
+      }
+    })
+  );
+
+  return config;
+};
+
+/**
+ * Parse and validate configuration values
+ * @param {Object} config - Raw configuration from git config
+ * @returns {Object} Parsed and validated configuration
+ */
+const parseConfig = (config) => {
+  const parsed = {};
+
+  // defaultDays: integer
+  if (config.defaultDays) {
+    const days = parseInt(config.defaultDays, 10);
+    if (!isNaN(days) && days > 0) {
+      parsed.defaultDays = days;
+    }
+  }
+
+  // defaultMode: 'default', 'project', or 'short'
+  if (config.defaultMode) {
+    const mode = config.defaultMode.toLowerCase();
+    if (['default', 'project', 'short'].includes(mode)) {
+      parsed.defaultMode = mode;
+    }
+  }
+
+  // colors: 'auto', 'always', or 'never'
+  if (config.colors) {
+    const colors = config.colors.toLowerCase();
+    if (['auto', 'always', 'never'].includes(colors)) {
+      parsed.colors = colors;
+    }
+  }
+
+  // defaultFormat: 'text', 'json', or 'markdown'
+  if (config.defaultFormat) {
+    const format = config.defaultFormat.toLowerCase();
+    if (['text', 'json', 'markdown'].includes(format)) {
+      parsed.defaultFormat = format;
+    }
+  }
+
+  // defaultAuthor: string (email or name pattern)
+  if (config.defaultAuthor) {
+    parsed.defaultAuthor = config.defaultAuthor;
+  }
+
+  return parsed;
+};
+
+/**
  * Get user commits in the repository for a given period
  * @param {string} repoPath - Repository path
  * @param {string} author - Author pattern (email or partial name)
@@ -494,7 +596,7 @@ const formatAsMarkdown = (data) => {
   markdown += `- **Period**: Last ${days} day${days !== 1 ? 's' : ''}\n`;
   markdown += `- **Mode**: ${mode}\n`;
   if (author) markdown += `- **Author**: ${author}\n`;
-  
+
   // Count repos based on mode
   let repoCount = 0;
   if (mode === 'default' && data.commitsByDate) {
@@ -592,7 +694,33 @@ const formatAsMarkdown = (data) => {
  * @param {boolean} [options.color] - Color option (true to force, false to disable, undefined for auto)
  */
 const main = async (options) => {
-  const { path: startPath, days, since, until, project: projectMode, short: shortMode, author: customAuthor, format = 'text', color } = options;
+  // Load configuration from git config
+  const gitConfig = parseConfig(await loadGitConfig());
+
+  // Merge configuration: CLI options take priority over git config
+  const config = {
+    path: options.path,
+    days: options.days ?? gitConfig.defaultDays ?? 7,
+    since: options.since,
+    until: options.until,
+    project: options.project ?? (gitConfig.defaultMode === 'project'),
+    short: options.short ?? (gitConfig.defaultMode === 'short'),
+    author: options.author ?? gitConfig.defaultAuthor,
+    format: options.format ?? gitConfig.defaultFormat ?? 'text',
+    color: options.color
+  };
+
+  // Handle colors config: 'auto', 'always', 'never'
+  if (gitConfig.colors && config.color === undefined) {
+    if (gitConfig.colors === 'always') {
+      config.color = true;
+    } else if (gitConfig.colors === 'never') {
+      config.color = false;
+    }
+    // 'auto' is the default behavior (undefined)
+  }
+
+  const { path: startPath, days, since, until, project: projectMode, short: shortMode, author: customAuthor, format, color } = config;
 
   // Calculate date range
   let dateRange;
@@ -847,11 +975,11 @@ program
   .description('Git activity tracker for standup meetings and project monitoring')
   .version('0.2.0')
   .argument('[path]', 'Starting path for repository search', '.')
-  .argument('[days]', 'Number of days to look back', '7')
+  .argument('[days]', 'Number of days to look back')
   .option('-p, --project', 'Enable project mode (group by project first, then by date)')
   .option('-s, --short', 'Short mode (only show last commit date without details)')
   .option('-a, --author <email>', 'Filter commits by author (email or partial name)')
-  .option('-f, --format <type>', 'Output format: text, json, or markdown', 'text')
+  .option('-f, --format <type>', 'Output format: text, json, or markdown')
   .option('--since <date>', 'Start date for activity search (YYYY-MM-DD)')
   .option('--until <date>', 'End date for activity search (YYYY-MM-DD, default: today)')
   .option('--color', 'Force color output (even for non-TTY)')
@@ -859,8 +987,8 @@ program
   .action(async (pathArg, daysArg, options) => {
     try {
       await main({
-        path: pathArg,
-        days: parseInt(daysArg, 10),
+        path: pathArg || '.',
+        days: daysArg ? parseInt(daysArg, 10) : undefined,
         since: options.since,
         until: options.until,
         project: options.project,
