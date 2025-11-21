@@ -11,22 +11,12 @@ import {
   calculateDateRange
 } from './src/shared/display/date-utils.js';
 import {
-  ANSI,
-  detectTerminalCapabilities,
-  getHashColor,
-  getMessageColor,
-  getTimeColor,
-  getDaysAgoColor,
-  colorize
+  detectTerminalCapabilities
 } from './src/shared/display/colors.js';
 import {
   parseIgnoreFile,
   patternToRegex
 } from './src/utils/file-patterns.js';
-import {
-  SEPARATOR_LENGTH,
-  formatRepoPath
-} from './src/shared/display/text-utils.js';
 import {
   getLastCommitDate,
   getUserCommits,
@@ -37,6 +27,9 @@ import {
   loadGitConfig,
   parseConfig
 } from './src/core/git-config.js';
+import { formatAsJSON } from './src/shared/formatters/format-json.js';
+import { formatAsMarkdown } from './src/shared/formatters/format-markdown.js';
+import { formatAsText } from './src/shared/formatters/format-text.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -53,110 +46,6 @@ const getPackageVersion = async () => {
   } catch {
     return '0.0.0';
   }
-};
-
-/**
- * Format results as JSON
- * @param {Object} data - Data to format
- * @returns {string} JSON formatted output
- */
-const formatAsJSON = (data) => {
-  return JSON.stringify(data, null, 2);
-};
-
-/**
- * Format results as Markdown
- * @param {Object} data - Data to format
- * @returns {string} Markdown formatted output
- */
-const formatAsMarkdown = (data) => {
-  const { repos, mode, days, author, duration } = data;
-  let markdown = `# Git Activity Report\n\n`;
-  markdown += `- **Period**: Last ${days} day${days !== 1 ? 's' : ''}\n`;
-  markdown += `- **Mode**: ${mode}\n`;
-  if (author) markdown += `- **Author**: ${author}\n`;
-
-  // Count repos based on mode
-  let repoCount = 0;
-  if (mode === 'default' && data.commitsByDate) {
-    const uniqueRepos = new Set();
-    Object.values(data.commitsByDate).forEach(dateData => {
-      Object.keys(dateData).forEach(repo => uniqueRepos.add(repo));
-    });
-    repoCount = uniqueRepos.size;
-  } else if (repos) {
-    repoCount = repos.length;
-  }
-
-  markdown += `- **Repositories found**: ${repoCount}\n`;
-  markdown += `- **Execution time**: ${duration}s\n\n`;
-
-  if (repoCount === 0) {
-    markdown += `No active repositories found.\n`;
-    return markdown;
-  }
-
-  markdown += `---\n\n`;
-
-  // Default mode (chronological): group by date, then by project
-  if (mode === 'default' && data.commitsByDate) {
-    const dates = Object.keys(data.commitsByDate).sort();
-
-    for (const date of dates) {
-      const dateObj = new Date(date);
-      const dayName = DAY_NAMES[dateObj.getDay()];
-      markdown += `## ${date} (${dayName})\n\n`;
-
-      const reposForDate = Object.keys(data.commitsByDate[date]);
-      for (const repo of reposForDate) {
-        markdown += `### ${repo}\n\n`;
-        const commits = data.commitsByDate[date][repo];
-        // Display commits in chronological order (oldest first)
-        for (const commit of commits.slice().reverse()) {
-          const rebaseInfo = commit.isRebase ? ` *(rebased on ${commit.commitDate})*` : '';
-          markdown += `- **${commit.time}** \`${commit.hash}\` - ${commit.message}${rebaseInfo}\n`;
-        }
-        markdown += `\n`;
-      }
-    }
-  }
-  // Project mode or short mode: group by project
-  else {
-    for (const repo of repos) {
-      markdown += `## ${repo.path}\n\n`;
-      markdown += `- **Last commit**: ${repo.daysAgo} day${repo.daysAgo !== 1 ? 's' : ''} ago (${repo.lastCommitDate})\n`;
-
-      // In short mode, only show last commit date
-      if (mode === 'short' || !repo.commits || repo.commits.length === 0) {
-        markdown += `\n`;
-        continue;
-      }
-
-      // Project mode: show commits grouped by date
-      markdown += `\n### Your commits\n\n`;
-      const commitsByDate = {};
-      repo.commits.forEach(commit => {
-        if (!commitsByDate[commit.date]) commitsByDate[commit.date] = [];
-        commitsByDate[commit.date].push(commit);
-      });
-
-      const dates = Object.keys(commitsByDate).sort();
-
-      for (const date of dates) {
-        const dateObj = new Date(date);
-        const dayName = DAY_NAMES[dateObj.getDay()];
-        markdown += `#### ${date} (${dayName})\n\n`;
-        // Display commits in chronological order (oldest first)
-        for (const commit of commitsByDate[date].slice().reverse()) {
-          const rebaseInfo = commit.isRebase ? ` *(rebased on ${commit.commitDate})*` : '';
-          markdown += `- **${commit.time}** \`${commit.hash}\` - ${commit.message}${rebaseInfo}\n`;
-        }
-        markdown += `\n`;
-      }
-    }
-  }
-
-  return markdown;
 };
 
 /**
@@ -334,56 +223,17 @@ const main = async (options) => {
       } else {
         outputData.author = author;
         outputData.commitsByDate = commitsByDateAndRepo;
+        outputData.rebaseSummariesByDate = rebaseSummariesByDate;
         outputData.repos = [...new Set(
           Object.values(commitsByDateAndRepo).flatMap(dateData => Object.keys(dateData))
         )];
 
         if (format === 'text') {
-          for (const date of dates) {
-            const dateObj = new Date(date);
-            const dayName = DAY_NAMES[dateObj.getDay()];
-            console.log(`📅 ${date} (${dayName})`);
-            console.log('─'.repeat(SEPARATOR_LENGTH));
-
-            const reposForDate = Object.keys(commitsByDateAndRepo[date] || {});
-            const rebaseReposForDate = Object.keys(rebaseSummariesByDate[date] || {});
-            const allReposForDate = [...new Set([...reposForDate, ...rebaseReposForDate])];
-
-            for (const repo of allReposForDate) {
-              console.log(`\n  📁 ${formatRepoPath(repo, process.cwd())}`);
-
-              // Display rebase summaries first
-              if (rebaseSummariesByDate[date] && rebaseSummariesByDate[date][repo]) {
-                for (const summary of rebaseSummariesByDate[date][repo]) {
-                  const dateRange = summary.firstAuthorDate === summary.lastAuthorDate
-                    ? summary.firstAuthorDate
-                    : `${summary.firstAuthorDate} to ${summary.lastAuthorDate}`;
-                  const timeColored = colorize(summary.commitTime, getTimeColor(summary.commitTime, terminalCaps), terminalCaps);
-                  const rebaseIcon = colorize('⟲', ANSI.rgb(255, 165, 0), terminalCaps);
-                  const summaryText = colorize(`Rebased ${summary.count} commit${summary.count > 1 ? 's' : ''} from ${dateRange}`, ANSI.rgb(136, 136, 136), terminalCaps);
-                  console.log(`     ${timeColored} ${rebaseIcon} ${summaryText}`);
-                }
-              }
-
-              // Display regular commits
-              if (commitsByDateAndRepo[date] && commitsByDateAndRepo[date][repo]) {
-                const commits = commitsByDateAndRepo[date][repo];
-                // Display commits in chronological order (oldest first)
-                for (const commit of commits.reverse()) {
-                  const timeColored = colorize(commit.time, getTimeColor(commit.time, terminalCaps), terminalCaps);
-                  const hashColored = colorize(commit.hash, getHashColor(terminalCaps), terminalCaps);
-                  const messageColored = colorize(commit.message, getMessageColor(terminalCaps), terminalCaps);
-                  const rebaseInfo = commit.isRebase ? colorize(` (rebased on ${commit.commitDate})`, '#888888', terminalCaps) : '';
-                  console.log(`     ${timeColored} ${hashColored} - ${messageColored}${rebaseInfo}`);
-                }
-              }
-            }
-            console.log('\n');
-          }
+          console.log(formatAsText(outputData, DAY_NAMES, terminalCaps, process.cwd()));
         } else if (format === 'json') {
           console.log(formatAsJSON(outputData));
         } else if (format === 'markdown') {
-          console.log(formatAsMarkdown(outputData));
+          console.log(formatAsMarkdown(outputData, DAY_NAMES));
         }
       }
     }
@@ -400,82 +250,25 @@ const main = async (options) => {
         allUserResults = await Promise.all(userCommitsPromises);
       }
 
-      // Display results
-      for (let i = 0; i < repos.length; i++) {
-        const repo = repos[i];
+      // Collect data for all formats (unified structure)
+      outputData.repos = repos.map((repo, i) => {
         const lastCommit = lastCommitDates[i];
-        // Use AuthorDate for display (shows when work was actually done)
         const lastCommitDate = lastCommit.authorDate || lastCommit.commitDate;
-        const daysAgo = Math.floor((Date.now() - lastCommitDate.getTime()) / MS_PER_DAY);
+        return {
+          path: repo,
+          lastCommitDate: formatDate(lastCommitDate),
+          daysAgo: Math.floor((Date.now() - lastCommitDate.getTime()) / MS_PER_DAY),
+          commits: projectMode && !shortMode && author ? allUserResults[i].commits : []
+        };
+      });
 
-        if (format === 'text') {
-          console.log(`  📁 ${formatRepoPath(repo, process.cwd())}`);
-          const daysAgoText = `${daysAgo} day${daysAgo !== 1 ? 's' : ''} ago`;
-          const daysAgoColored = colorize(daysAgoText, getDaysAgoColor(daysAgo, terminalCaps), terminalCaps);
-          const dateText = colorize(formatDate(lastCommitDate), getMessageColor(terminalCaps), terminalCaps);
-          console.log(`     └─ Last commit: ${daysAgoColored} (${dateText})`);
-        }
-
-        // Project mode: display author's commits grouped by date (only if not short mode)
-        if (projectMode && !shortMode && author) {
-          const result = allUserResults[i];
-          const userCommits = result.commits;
-          if (userCommits.length > 0 && format === 'text') {
-            console.log(`\n     Your commits:`);
-
-            // Group commits by date
-            const commitsByDate = userCommits.reduce((acc, commit) => {
-              if (!acc[commit.date]) {
-                acc[commit.date] = [];
-              }
-              acc[commit.date].push(commit);
-              return acc;
-            }, {});
-
-            // Display commits grouped by date (text format only)
-            if (format === 'text') {
-              const dates = Object.keys(commitsByDate).sort();
-
-              for (const date of dates) {
-                // Calculate day of week
-                const dateObj = new Date(date);
-                const dayName = DAY_NAMES[dateObj.getDay()];
-
-                console.log(`\n        📅 ${date} (${dayName})`);
-                // Display commits in chronological order (oldest first)
-                for (const commit of commitsByDate[date].slice().reverse()) {
-                  const timeColored = colorize(commit.time, getTimeColor(commit.time, terminalCaps), terminalCaps);
-                  const hashColored = colorize(commit.hash, getHashColor(terminalCaps), terminalCaps);
-                  const messageColored = colorize(commit.message, getMessageColor(terminalCaps), terminalCaps);
-                  const rebaseInfo = commit.isRebase ? colorize(` (rebased on ${commit.commitDate})`, '#888888', terminalCaps) : '';
-                  console.log(`           ${timeColored} ${hashColored} - ${messageColored}${rebaseInfo}`);
-                }
-              }
-              console.log('');
-            }
-          }
-        }
-      }
-
-      // Collect data for non-text formats
-      if (format !== 'text') {
-        outputData.repos = repos.map((repo, i) => {
-          const lastCommit = lastCommitDates[i];
-          const lastCommitDate = lastCommit.authorDate || lastCommit.commitDate;
-          return {
-            path: repo,
-            lastCommitDate: formatDate(lastCommitDate),
-            daysAgo: Math.floor((Date.now() - lastCommitDate.getTime()) / MS_PER_DAY),
-            commits: projectMode && !shortMode && author ? allUserResults[i].commits : []
-          };
-        });
-
-        // Output for non-text formats
-        if (format === 'json') {
-          console.log(formatAsJSON(outputData));
-        } else if (format === 'markdown') {
-          console.log(formatAsMarkdown(outputData));
-        }
+      // Output with appropriate formatter
+      if (format === 'text') {
+        console.log(formatAsText(outputData, DAY_NAMES, terminalCaps, process.cwd()));
+      } else if (format === 'json') {
+        console.log(formatAsJSON(outputData));
+      } else if (format === 'markdown') {
+        console.log(formatAsMarkdown(outputData, DAY_NAMES));
       }
     }
   }
