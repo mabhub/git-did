@@ -6,21 +6,17 @@ import { fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { Command } from 'commander';
+import {
+  DAY_NAMES,
+  MS_PER_DAY,
+  formatDate,
+  calculateDateRange
+} from './src/shared/display/date-utils.js';
 
 const execFileAsync = promisify(execFile);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-
-/**
- * Day names for formatting dates
- */
-const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-
-/**
- * Milliseconds per day constant
- */
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 /**
  * Separator line length for text output
@@ -39,91 +35,6 @@ const getPackageVersion = async () => {
   } catch {
     return '0.0.0';
   }
-};
-
-/**
- * Parse and validate a date string in YYYY-MM-DD format
- * @param {string} dateString - Date string to parse
- * @returns {Date|null} Parsed date or null if invalid
- */
-const parseDate = (dateString) => {
-  const regex = /^\d{4}-\d{2}-\d{2}$/;
-  if (!regex.test(dateString)) {
-    return null;
-  }
-
-  const date = new Date(dateString);
-  if (isNaN(date.getTime())) {
-    return null;
-  }
-
-  // Verify that the date wasn't normalized (e.g., 2025-02-30 -> 2025-03-02)
-  if (formatDate(date) !== dateString) {
-    return null;
-  }
-
-  return date;
-};
-
-/**
- * Format a date to YYYY-MM-DD
- * @param {Date} date - Date to format
- * @returns {string} Formatted date string
- */
-const formatDate = (date) => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
-
-/**
- * Calculate date range from days parameter or since/until options
- * @param {number} days - Number of days (legacy parameter)
- * @param {string} [since] - Start date (YYYY-MM-DD)
- * @param {string} [until] - End date (YYYY-MM-DD)
- * @returns {Object} Date range with since and until dates
- * @throws {Error} If --since date format is invalid
- * @throws {Error} If --until date format is invalid
- * @throws {Error} If --since date is after --until date
- */
-const calculateDateRange = (days, since, until) => {
-  let sinceDate, untilDate;
-
-  // If since is provided, use it
-  if (since) {
-    sinceDate = parseDate(since);
-    if (!sinceDate) {
-      throw new Error(`Invalid --since date format. Use YYYY-MM-DD (e.g., ${formatDate(new Date())})`);
-    }
-  }
-
-  // If until is provided, use it; otherwise use today
-  if (until) {
-    untilDate = parseDate(until);
-    if (!untilDate) {
-      throw new Error(`Invalid --until date format. Use YYYY-MM-DD (e.g., ${formatDate(new Date())})`);
-    }
-  } else {
-    untilDate = new Date();
-  }
-
-  // If since is not provided, calculate it from days
-  if (!sinceDate) {
-    sinceDate = new Date(untilDate.getTime() - days * MS_PER_DAY);
-  }
-
-  // Validate that since is before until
-  if (sinceDate > untilDate) {
-    throw new Error('--since date must be before --until date');
-  }
-
-  return {
-    since: sinceDate,
-    until: untilDate,
-    sinceStr: formatDate(sinceDate),
-    untilStr: formatDate(untilDate)
-  };
 };
 
 /**
