@@ -3,8 +3,6 @@
 import { readFile } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { Command } from 'commander';
 import {
   DAY_NAMES,
@@ -34,8 +32,11 @@ import {
   getUserCommits,
   findActiveGitRepos
 } from './src/core/git-operations.js';
-
-const execFileAsync = promisify(execFile);
+import {
+  getCurrentUserEmail,
+  loadGitConfig,
+  parseConfig
+} from './src/core/git-config.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -52,112 +53,6 @@ const getPackageVersion = async () => {
   } catch {
     return '0.0.0';
   }
-};
-
-/**
- * Get the current Git user's email
- * @returns {Promise<string|null>}
- */
-const getCurrentUserEmail = async () => {
-  try {
-    const { stdout } = await execFileAsync('git', ['config', 'user.email']);
-    return stdout.trim();
-  } catch {
-    return null;
-  }
-};
-
-/**
- * Read a git-did configuration value from git config
- * Checks local, global, and system config in order of priority
- * @param {string} key - Configuration key (without 'did.' prefix)
- * @param {string} [defaultValue] - Default value if not found
- * @returns {Promise<string|null>} Configuration value or default
- */
-const getGitConfig = async (key, defaultValue = null) => {
-  try {
-    // Try to get value without specifying scope (respects git config priority)
-    const { stdout } = await execFileAsync('git', ['config', `did.${key}`]);
-    return stdout.trim() || defaultValue;
-  } catch {
-    return defaultValue;
-  }
-};
-
-/**
- * Read all git-did configuration values
- * @returns {Promise<Object>} Configuration object
- */
-const loadGitConfig = async () => {
-  const config = {};
-
-  // Load all supported configuration keys
-  const keys = [
-    'defaultDays',
-    'defaultMode',
-    'colors',
-    'defaultFormat',
-    'defaultAuthor'
-  ];
-
-  await Promise.all(
-    keys.map(async (key) => {
-      const value = await getGitConfig(key);
-      if (value !== null) {
-        config[key] = value;
-      }
-    })
-  );
-
-  return config;
-};
-
-/**
- * Parse and validate configuration values
- * @param {Object} config - Raw configuration from git config
- * @returns {Object} Parsed and validated configuration
- */
-const parseConfig = (config) => {
-  const parsed = {};
-
-  // defaultDays: integer
-  if (config.defaultDays) {
-    const days = parseInt(config.defaultDays, 10);
-    if (!isNaN(days) && days > 0) {
-      parsed.defaultDays = days;
-    }
-  }
-
-  // defaultMode: 'default', 'project', or 'short'
-  if (config.defaultMode) {
-    const mode = config.defaultMode.toLowerCase();
-    if (['default', 'project', 'short'].includes(mode)) {
-      parsed.defaultMode = mode;
-    }
-  }
-
-  // colors: 'auto', 'always', or 'never'
-  if (config.colors) {
-    const colors = config.colors.toLowerCase();
-    if (['auto', 'always', 'never'].includes(colors)) {
-      parsed.colors = colors;
-    }
-  }
-
-  // defaultFormat: 'text', 'json', or 'markdown'
-  if (config.defaultFormat) {
-    const format = config.defaultFormat.toLowerCase();
-    if (['text', 'json', 'markdown'].includes(format)) {
-      parsed.defaultFormat = format;
-    }
-  }
-
-  // defaultAuthor: string (email or name pattern)
-  if (config.defaultAuthor) {
-    parsed.defaultAuthor = config.defaultAuthor;
-  }
-
-  return parsed;
 };
 
 /**
