@@ -30,6 +30,7 @@ import {
   SEPARATOR_LENGTH,
   formatRepoPath
 } from './src/shared/display/text-utils.js';
+import { parseCommitsAndDetectRebases } from './src/core/rebase-detection.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -211,83 +212,11 @@ const getUserCommits = async (repoPath, author, sinceDate, untilDate) => {
       `--format=${format}`
     ]);
 
-    if (!stdout.trim()) return { commits: [], rebaseSummaries: [] };
-
     // Parse date range for filtering and rebase detection
     const sinceTimestamp = new Date(sinceDate).getTime() / 1000;
     const untilTimestamp = new Date(untilDate + 'T23:59:59').getTime() / 1000;
 
-    const allCommits = stdout
-      .trim()
-      .split('\n')
-      .map(line => {
-        const parts = line.split('|');
-        const hash = parts[0];
-        const date = parts[2];
-        const timestamp = parseInt(parts[3], 10);
-        const authorIsoDate = parts[4];
-        const commitDate = parts[parts.length - 3];
-        const commitTimestamp = parseInt(parts[parts.length - 2], 10);
-        const commitIsoDate = parts[parts.length - 1];
-        // Message is everything between first and last 6 pipes (handles pipes in message)
-        const message = parts.slice(1, -6).join('|');
-        const time = authorIsoDate.split('T')[1].substring(0, 5); // Extract HH:MM with correct timezone
-
-        // Check if AuthorDate is in range
-        const authorInRange = timestamp >= sinceTimestamp && timestamp <= untilTimestamp;
-
-        // Check if CommitDate is in range
-        const commitInRange = commitTimestamp >= sinceTimestamp && commitTimestamp <= untilTimestamp;
-
-        // Detect rebase: CommitDate significantly different from AuthorDate (> 1 day)
-        const timeDiff = Math.abs(commitTimestamp - timestamp);
-        const isRebase = timeDiff > 86400; // More than 1 day difference
-
-        return { hash, message, date, time, timestamp, commitDate, commitTimestamp, commitIsoDate, isRebase, authorInRange, commitInRange };
-      });
-
-    // Regular commits: authored in the date range
-    const commits = allCommits.filter(commit => commit.authorInRange);
-
-    // Rebase summaries: commits rebased during the period but authored outside
-    const rebasedCommits = allCommits.filter(commit =>
-      commit.isRebase && commit.commitInRange && !commit.authorInRange
-    );
-
-    // Group rebased commits by CommitDate (rebase date)
-    const rebaseSummaries = [];
-    const rebasesByDate = {};
-
-    rebasedCommits.forEach(commit => {
-      if (!rebasesByDate[commit.commitDate]) {
-        rebasesByDate[commit.commitDate] = [];
-      }
-      rebasesByDate[commit.commitDate].push(commit);
-    });
-
-    // Create summary entries
-    Object.entries(rebasesByDate).forEach(([commitDate, commits]) => {
-      // Find the date range of original commits
-      const authorDates = commits.map(c => c.date).sort();
-      const firstDate = authorDates[0];
-      const lastDate = authorDates[authorDates.length - 1];
-
-      // Get the time from the first commit's CommitDate (ISO format)
-      // All commits rebased at the same time should have similar CommitDate timestamps
-      const firstCommit = commits[0];
-      const commitTime = firstCommit.commitIsoDate.split('T')[1].substring(0, 5); // Extract HH:MM with correct timezone
-
-      rebaseSummaries.push({
-        commitDate,
-        commitTime,
-        count: commits.length,
-        firstAuthorDate: firstDate,
-        lastAuthorDate: lastDate,
-        commits: commits.map(c => ({ hash: c.hash, date: c.date, message: c.message }))
-      });
-    });
-
-    return { commits, rebaseSummaries };
+    return parseCommitsAndDetectRebases(stdout, sinceTimestamp, untilTimestamp);
   } catch {
     return { commits: [], rebaseSummaries: [] };
   }
