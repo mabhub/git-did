@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { readdir, stat, readFile } from 'node:fs/promises';
-import { join, relative, dirname, basename } from 'node:path';
+import { join, relative, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -26,16 +26,15 @@ import {
   patternToRegex,
   shouldIgnorePath
 } from './src/utils/file-patterns.js';
+import {
+  SEPARATOR_LENGTH,
+  formatRepoPath
+} from './src/shared/display/text-utils.js';
 
 const execFileAsync = promisify(execFile);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-
-/**
- * Separator line length for text output
- */
-const SEPARATOR_LENGTH = 60;
 
 /**
  * Read package.json version
@@ -49,20 +48,6 @@ const getPackageVersion = async () => {
   } catch {
     return '0.0.0';
   }
-};
-
-/**
- * Format repository path for display
- * Add directory name in parentheses if path is '.'
- * @param {string} repoPath - Repository path
- * @returns {string} Formatted path for display
- */
-const formatRepoPath = (repoPath) => {
-  if (repoPath === '.') {
-    const dirName = basename(process.cwd());
-    return `. (${dirName})`;
-  }
-  return repoPath;
 };
 
 /**
@@ -698,7 +683,7 @@ const main = async (options) => {
             const allReposForDate = [...new Set([...reposForDate, ...rebaseReposForDate])];
 
             for (const repo of allReposForDate) {
-              console.log(`\n  📁 ${formatRepoPath(repo)}`);
+              console.log(`\n  📁 ${formatRepoPath(repo, process.cwd())}`);
 
               // Display rebase summaries first
               if (rebaseSummariesByDate[date] && rebaseSummariesByDate[date][repo]) {
@@ -757,7 +742,7 @@ const main = async (options) => {
         const daysAgo = Math.floor((Date.now() - lastCommitDate.getTime()) / MS_PER_DAY);
 
         if (format === 'text') {
-          console.log(`  📁 ${formatRepoPath(repo)}`);
+          console.log(`  📁 ${formatRepoPath(repo, process.cwd())}`);
           const daysAgoText = `${daysAgo} day${daysAgo !== 1 ? 's' : ''} ago`;
           const daysAgoColored = colorize(daysAgoText, getDaysAgoColor(daysAgo, terminalCaps), terminalCaps);
           const dateText = colorize(formatDate(lastCommitDate), getMessageColor(terminalCaps), terminalCaps);
