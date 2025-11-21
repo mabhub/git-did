@@ -385,15 +385,18 @@ const isGitRepository = async (dirPath) => {
 /**
  * Get the date of the last commit in a Git repository
  * @param {string} repoPath - Repository path
- * @returns {Promise<Date|null>}
+ * @returns {Promise<{authorDate: Date|null, commitDate: Date|null}>}
  */
 const getLastCommitDate = async (repoPath) => {
   try {
-    const { stdout } = await execFileAsync('git', ['-C', repoPath, 'log', '-1', '--format=%ct']);
-    const timestamp = parseInt(stdout.trim(), 10);
-    return new Date(timestamp * 1000);
+    const { stdout } = await execFileAsync('git', ['-C', repoPath, 'log', '-1', '--format=%at|%ct']);
+    const [authorTimestamp, commitTimestamp] = stdout.trim().split('|').map(t => parseInt(t, 10));
+    return {
+      authorDate: new Date(authorTimestamp * 1000),
+      commitDate: new Date(commitTimestamp * 1000)
+    };
   } catch {
-    return null;
+    return { authorDate: null, commitDate: null };
   }
 };
 
@@ -509,55 +512,123 @@ const parseConfig = (config) => {
  * @param {string} author - Author pattern (email or partial name)
  * @param {string} sinceDate - Start date (YYYY-MM-DD)
  * @param {string} untilDate - End date (YYYY-MM-DD)
- * @returns {Promise<Array<{hash: string, message: string, date: string, time: string, timestamp: number}>>}
+ * @returns {Promise<{commits: Array, rebaseSummaries: Array}>} Commits and rebase summaries
  */
 const getUserCommits = async (repoPath, author, sinceDate, untilDate) => {
   try {
-    const format = '%h|%s|%as|%at|%aI'; // short hash|subject|date YYYY-MM-DD|timestamp|ISO
+    const format = '%h|%s|%as|%at|%aI|%cs|%ct|%cI'; // short hash|subject|author date|author timestamp|author ISO|commit date|commit timestamp|commit ISO
+    // Use --all to include all branches, and filter by author date range manually
     const { stdout } = await execFileAsync('git', [
       '-C',
       repoPath,
       'log',
+      '--all',
       `--author=${author}`,
-      `--since=${sinceDate}`,
-      `--until=${untilDate}`,
       `--abbrev=7`,
       `--format=${format}`
     ]);
 
-    if (!stdout.trim()) return [];
+    if (!stdout.trim()) return { commits: [], rebaseSummaries: [] };
 
-    return stdout
+    // Parse date range for filtering and rebase detection
+    const sinceTimestamp = new Date(sinceDate).getTime() / 1000;
+    const untilTimestamp = new Date(untilDate + 'T23:59:59').getTime() / 1000;
+
+    const allCommits = stdout
       .trim()
       .split('\n')
       .map(line => {
         const parts = line.split('|');
         const hash = parts[0];
         const date = parts[2];
-        const timestamp = parts[3];
-        const isoDate = parts[4];
-        // Message is everything between first and third pipe (handles pipes in message)
-        const message = parts.slice(1, -3).join('|');
-        const time = isoDate.split('T')[1].substring(0, 5); // Extract HH:MM
-        return { hash, message, date, time, timestamp: parseInt(timestamp, 10) };
+        const timestamp = parseInt(parts[3], 10);
+        const authorIsoDate = parts[4];
+        const commitDate = parts[parts.length - 3];
+        const commitTimestamp = parseInt(parts[parts.length - 2], 10);
+        const commitIsoDate = parts[parts.length - 1];
+        // Message is everything between first and last 6 pipes (handles pipes in message)
+        const message = parts.slice(1, -6).join('|');
+        const time = authorIsoDate.split('T')[1].substring(0, 5); // Extract HH:MM with correct timezone
+
+        // Check if AuthorDate is in range
+        const authorInRange = timestamp >= sinceTimestamp && timestamp <= untilTimestamp;
+
+        // Check if CommitDate is in range
+        const commitInRange = commitTimestamp >= sinceTimestamp && commitTimestamp <= untilTimestamp;
+
+        // Detect rebase: CommitDate significantly different from AuthorDate (> 1 day)
+        const timeDiff = Math.abs(commitTimestamp - timestamp);
+        const isRebase = timeDiff > 86400; // More than 1 day difference
+
+        return { hash, message, date, time, timestamp, commitDate, commitTimestamp, commitIsoDate, isRebase, authorInRange, commitInRange };
       });
+
+    // Regular commits: authored in the date range
+    const commits = allCommits.filter(commit => commit.authorInRange);
+
+    // Rebase summaries: commits rebased during the period but authored outside
+    const rebasedCommits = allCommits.filter(commit =>
+      commit.isRebase && commit.commitInRange && !commit.authorInRange
+    );
+
+    // Group rebased commits by CommitDate (rebase date)
+    const rebaseSummaries = [];
+    const rebasesByDate = {};
+
+    rebasedCommits.forEach(commit => {
+      if (!rebasesByDate[commit.commitDate]) {
+        rebasesByDate[commit.commitDate] = [];
+      }
+      rebasesByDate[commit.commitDate].push(commit);
+    });
+
+    // Create summary entries
+    Object.entries(rebasesByDate).forEach(([commitDate, commits]) => {
+      // Find the date range of original commits
+      const authorDates = commits.map(c => c.date).sort();
+      const firstDate = authorDates[0];
+      const lastDate = authorDates[authorDates.length - 1];
+
+      // Get the time from the first commit's CommitDate (ISO format)
+      // All commits rebased at the same time should have similar CommitDate timestamps
+      const firstCommit = commits[0];
+      const commitTime = firstCommit.commitIsoDate.split('T')[1].substring(0, 5); // Extract HH:MM with correct timezone
+
+      rebaseSummaries.push({
+        commitDate,
+        commitTime,
+        count: commits.length,
+        firstAuthorDate: firstDate,
+        lastAuthorDate: lastDate,
+        commits: commits.map(c => ({ hash: c.hash, date: c.date, message: c.message }))
+      });
+    });
+
+    return { commits, rebaseSummaries };
   } catch {
-    return [];
+    return { commits: [], rebaseSummaries: [] };
   }
 };
 
 /**
  * Check if the repository has had activity in a date range
+ * Checks both AuthorDate and CommitDate - repository is active if either is in range
  * @param {string} repoPath - Repository path
  * @param {Date} sinceDate - Start date
  * @param {Date} untilDate - End date
  * @returns {Promise<boolean>}
  */
 const hasRecentActivity = async (repoPath, sinceDate, untilDate) => {
-  const lastCommitDate = await getLastCommitDate(repoPath);
-  if (!lastCommitDate) return false;
+  const lastCommit = await getLastCommitDate(repoPath);
+  if (!lastCommit.authorDate && !lastCommit.commitDate) return false;
 
-  return lastCommitDate >= sinceDate && lastCommitDate <= untilDate;
+  // Repository is active if either AuthorDate or CommitDate is in range
+  const authorInRange = lastCommit.authorDate &&
+    lastCommit.authorDate >= sinceDate && lastCommit.authorDate <= untilDate;
+  const commitInRange = lastCommit.commitDate &&
+    lastCommit.commitDate >= sinceDate && lastCommit.commitDate <= untilDate;
+
+  return authorInRange || commitInRange;
 };
 
 /**
@@ -692,7 +763,8 @@ const formatAsMarkdown = (data) => {
         const commits = data.commitsByDate[date][repo];
         // Display commits in chronological order (oldest first)
         for (const commit of commits.slice().reverse()) {
-          markdown += `- **${commit.time}** \`${commit.hash}\` - ${commit.message}\n`;
+          const rebaseInfo = commit.isRebase ? ` *(rebased on ${commit.commitDate})*` : '';
+          markdown += `- **${commit.time}** \`${commit.hash}\` - ${commit.message}${rebaseInfo}\n`;
         }
         markdown += `\n`;
       }
@@ -726,7 +798,8 @@ const formatAsMarkdown = (data) => {
         markdown += `#### ${date} (${dayName})\n\n`;
         // Display commits in chronological order (oldest first)
         for (const commit of commitsByDate[date].slice().reverse()) {
-          markdown += `- **${commit.time}** \`${commit.hash}\` - ${commit.message}\n`;
+          const rebaseInfo = commit.isRebase ? ` *(rebased on ${commit.commitDate})*` : '';
+          markdown += `- **${commit.time}** \`${commit.hash}\` - ${commit.message}${rebaseInfo}\n`;
         }
         markdown += `\n`;
       }
@@ -866,15 +939,18 @@ const main = async (options) => {
     // Default mode (chrono): chronological display by day, then by project
     if (!projectMode && !shortMode && author) {
       const commitsByDateAndRepo = {};
+      const rebaseSummariesByDate = {};
 
       // Collect all commits from all repositories in parallel
       const commitsPromises = repos.map(repo => getUserCommits(repo, author, dateRange.sinceStr, dateRange.untilStr));
-      const allCommits = await Promise.all(commitsPromises);
+      const allResults = await Promise.all(commitsPromises);
 
-      // Organize commits by date and repo
-      allCommits.forEach((userCommits, index) => {
+      // Organize commits and rebase summaries by date and repo
+      allResults.forEach((result, index) => {
         const repo = repos[index];
-        for (const commit of userCommits) {
+
+        // Regular commits
+        for (const commit of result.commits) {
           if (!commitsByDateAndRepo[commit.date]) {
             commitsByDateAndRepo[commit.date] = {};
           }
@@ -882,6 +958,17 @@ const main = async (options) => {
             commitsByDateAndRepo[commit.date][repo] = [];
           }
           commitsByDateAndRepo[commit.date][repo].push(commit);
+        }
+
+        // Rebase summaries
+        for (const summary of result.rebaseSummaries) {
+          if (!rebaseSummariesByDate[summary.commitDate]) {
+            rebaseSummariesByDate[summary.commitDate] = {};
+          }
+          if (!rebaseSummariesByDate[summary.commitDate][repo]) {
+            rebaseSummariesByDate[summary.commitDate][repo] = [];
+          }
+          rebaseSummariesByDate[summary.commitDate][repo].push(summary);
         }
       });
 
@@ -908,16 +995,37 @@ const main = async (options) => {
             console.log(`📅 ${date} (${dayName})`);
             console.log('─'.repeat(SEPARATOR_LENGTH));
 
-            const reposForDate = Object.keys(commitsByDateAndRepo[date]);
-            for (const repo of reposForDate) {
+            const reposForDate = Object.keys(commitsByDateAndRepo[date] || {});
+            const rebaseReposForDate = Object.keys(rebaseSummariesByDate[date] || {});
+            const allReposForDate = [...new Set([...reposForDate, ...rebaseReposForDate])];
+
+            for (const repo of allReposForDate) {
               console.log(`\n  📁 ${formatRepoPath(repo)}`);
-              const commits = commitsByDateAndRepo[date][repo];
-              // Display commits in chronological order (oldest first)
-              for (const commit of commits.reverse()) {
-                const timeColored = colorize(commit.time, getTimeColor(commit.time, terminalCaps), terminalCaps);
-                const hashColored = colorize(commit.hash, getHashColor(terminalCaps), terminalCaps);
-                const messageColored = colorize(commit.message, getMessageColor(terminalCaps), terminalCaps);
-                console.log(`     ${timeColored} ${hashColored} - ${messageColored}`);
+
+              // Display rebase summaries first
+              if (rebaseSummariesByDate[date] && rebaseSummariesByDate[date][repo]) {
+                for (const summary of rebaseSummariesByDate[date][repo]) {
+                  const dateRange = summary.firstAuthorDate === summary.lastAuthorDate
+                    ? summary.firstAuthorDate
+                    : `${summary.firstAuthorDate} to ${summary.lastAuthorDate}`;
+                  const timeColored = colorize(summary.commitTime, getTimeColor(summary.commitTime, terminalCaps), terminalCaps);
+                  const rebaseIcon = colorize('⟲', ANSI.rgb(255, 165, 0), terminalCaps);
+                  const summaryText = colorize(`Rebased ${summary.count} commit${summary.count > 1 ? 's' : ''} from ${dateRange}`, ANSI.rgb(136, 136, 136), terminalCaps);
+                  console.log(`     ${timeColored} ${rebaseIcon} ${summaryText}`);
+                }
+              }
+
+              // Display regular commits
+              if (commitsByDateAndRepo[date] && commitsByDateAndRepo[date][repo]) {
+                const commits = commitsByDateAndRepo[date][repo];
+                // Display commits in chronological order (oldest first)
+                for (const commit of commits.reverse()) {
+                  const timeColored = colorize(commit.time, getTimeColor(commit.time, terminalCaps), terminalCaps);
+                  const hashColored = colorize(commit.hash, getHashColor(terminalCaps), terminalCaps);
+                  const messageColored = colorize(commit.message, getMessageColor(terminalCaps), terminalCaps);
+                  const rebaseInfo = commit.isRebase ? colorize(` (rebased on ${commit.commitDate})`, '#888888', terminalCaps) : '';
+                  console.log(`     ${timeColored} ${hashColored} - ${messageColored}${rebaseInfo}`);
+                }
               }
             }
             console.log('\n');
@@ -936,29 +1044,32 @@ const main = async (options) => {
       const lastCommitDates = await Promise.all(lastCommitDatesPromises);
 
       // Fetch all user commits in parallel if in project mode (and not short-only)
-      let allUserCommits = [];
+      let allUserResults = [];
       if (projectMode && !shortMode && author) {
         const userCommitsPromises = repos.map(repo => getUserCommits(repo, author, dateRange.sinceStr, dateRange.untilStr));
-        allUserCommits = await Promise.all(userCommitsPromises);
+        allUserResults = await Promise.all(userCommitsPromises);
       }
 
       // Display results
       for (let i = 0; i < repos.length; i++) {
         const repo = repos[i];
         const lastCommit = lastCommitDates[i];
-        const daysAgo = Math.floor((Date.now() - lastCommit.getTime()) / MS_PER_DAY);
+        // Use AuthorDate for display (shows when work was actually done)
+        const lastCommitDate = lastCommit.authorDate || lastCommit.commitDate;
+        const daysAgo = Math.floor((Date.now() - lastCommitDate.getTime()) / MS_PER_DAY);
 
         if (format === 'text') {
           console.log(`  📁 ${formatRepoPath(repo)}`);
           const daysAgoText = `${daysAgo} day${daysAgo !== 1 ? 's' : ''} ago`;
           const daysAgoColored = colorize(daysAgoText, getDaysAgoColor(daysAgo, terminalCaps), terminalCaps);
-          const dateText = colorize(formatDate(lastCommit), getMessageColor(terminalCaps), terminalCaps);
+          const dateText = colorize(formatDate(lastCommitDate), getMessageColor(terminalCaps), terminalCaps);
           console.log(`     └─ Last commit: ${daysAgoColored} (${dateText})`);
         }
 
         // Project mode: display author's commits grouped by date (only if not short mode)
         if (projectMode && !shortMode && author) {
-          const userCommits = allUserCommits[i];
+          const result = allUserResults[i];
+          const userCommits = result.commits;
           if (userCommits.length > 0 && format === 'text') {
             console.log(`\n     Your commits:`);
 
@@ -986,7 +1097,8 @@ const main = async (options) => {
                   const timeColored = colorize(commit.time, getTimeColor(commit.time, terminalCaps), terminalCaps);
                   const hashColored = colorize(commit.hash, getHashColor(terminalCaps), terminalCaps);
                   const messageColored = colorize(commit.message, getMessageColor(terminalCaps), terminalCaps);
-                  console.log(`           ${timeColored} ${hashColored} - ${messageColored}`);
+                  const rebaseInfo = commit.isRebase ? colorize(` (rebased on ${commit.commitDate})`, '#888888', terminalCaps) : '';
+                  console.log(`           ${timeColored} ${hashColored} - ${messageColored}${rebaseInfo}`);
                 }
               }
               console.log('');
@@ -997,12 +1109,16 @@ const main = async (options) => {
 
       // Collect data for non-text formats
       if (format !== 'text') {
-        outputData.repos = repos.map((repo, i) => ({
-          path: repo,
-          lastCommitDate: formatDate(lastCommitDates[i]),
-          daysAgo: Math.floor((Date.now() - lastCommitDates[i].getTime()) / MS_PER_DAY),
-          commits: projectMode && !shortMode && author ? allUserCommits[i] : []
-        }));
+        outputData.repos = repos.map((repo, i) => {
+          const lastCommit = lastCommitDates[i];
+          const lastCommitDate = lastCommit.authorDate || lastCommit.commitDate;
+          return {
+            path: repo,
+            lastCommitDate: formatDate(lastCommitDate),
+            daysAgo: Math.floor((Date.now() - lastCommitDate.getTime()) / MS_PER_DAY),
+            commits: projectMode && !shortMode && author ? allUserResults[i].commits : []
+          };
+        });
 
         // Output for non-text formats
         if (format === 'json') {
