@@ -1,6 +1,6 @@
 {
   "name": "git-did",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Git activity tracker for standup meetings and project monitoring",
   "main": "main.js",
   "bin": {
